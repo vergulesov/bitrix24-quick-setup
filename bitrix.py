@@ -204,6 +204,18 @@ class BitrixClient:
         )
         return (result or {}).get("items", [])
 
+    def add_timeline_comment(self, deal_id: int, comment: str) -> Any:
+        return self.call(
+            "crm.timeline.comment.add",
+            {
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": comment,
+                }
+            },
+        )
+
     def update_deal_stage(self, deal_id: int, stage_id: str) -> Any:
         return self.call(
             "crm.item.update",

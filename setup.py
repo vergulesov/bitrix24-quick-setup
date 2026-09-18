@@ -260,6 +260,7 @@ def configure_deal_card(
             "type": "section",
             "elements": [
                 {"name": "TITLE", "optionFlags": 1},
+                {"name": "CREATED_TIME", "optionFlags": 1},
                 {"name": fields["CANDIDATE_FIRST_NAME"], "optionFlags": 1},
                 {"name": fields["CANDIDATE_LAST_NAME"], "optionFlags": 1},
                 {"name": fields["CANDIDATE_PHONE"], "optionFlags": 1},

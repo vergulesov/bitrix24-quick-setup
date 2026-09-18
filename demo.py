@@ -198,8 +198,15 @@ def seed_demo(
             ),
         }
 
+        identifier = (
+            phone.replace("+7 ", "")
+            if phone
+            else telegram
+            or max_contact
+            or f"КАН-{random.randint(10000, 99999)}"
+        )
         deal_id = client.add_deal(
-            title=f"{person} · {phone.replace('+7 ', '')}" if phone else person,
+            title=f"{person} · {identifier}",
             category_id=category_id,
             stage_id=stage_id,
             assigned_by_id=user_id,

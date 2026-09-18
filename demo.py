@@ -191,7 +191,7 @@ def seed_demo(
         }
 
         deal_id = client.add_deal(
-            title=f"{person} · {phone}" if phone else person,
+            title=f"{person} · {phone.replace('+7 ', '')}" if phone else person,
             category_id=category_id,
             stage_id=stage_id,
             assigned_by_id=user_id,

@@ -77,6 +77,12 @@ class BitrixClient:
         )
         return result or []
 
+    def update_status(self, status_id: int, fields: dict[str, Any]) -> Any:
+        return self.call(
+            "crm.status.update",
+            {"id": status_id, "fields": fields},
+        )
+
     def add_stage(
         self,
         category_id: int,

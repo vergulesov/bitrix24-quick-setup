@@ -265,6 +265,8 @@ def configure_deal_card(
                 {"name": fields["CANDIDATE_LAST_NAME"], "optionFlags": 1},
                 {"name": fields["CANDIDATE_PHONE"], "optionFlags": 1},
                 {"name": fields["CANDIDATE_TELEGRAM"], "optionFlags": 1},
+                {"name": fields["CANDIDATE_WHATSAPP"], "optionFlags": 1},
+                {"name": fields["CANDIDATE_MAX"], "optionFlags": 1},
                 {"name": fields["DESIRED_POSITION"], "optionFlags": 1},
                 {"name": fields["DIRECTION"], "optionFlags": 1},
                 {"name": fields["VACANCY"], "optionFlags": 1},

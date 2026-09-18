@@ -215,7 +215,7 @@ class BitrixClient:
             {
                 "entityTypeId": 2,
                 "fields": deal_fields,
-                "useOriginalUfNames": True,
+                "useOriginalUfNames": "Y",
             },
         )
         return int(result["item"]["id"])

@@ -34,8 +34,27 @@ def clear() -> None:
     clear_demo(client, pipeline_id)
 
 
+
+def inspect() -> None:
+    client = make_client()
+    categories = client.list_categories()
+
+    print("CRM deal pipelines:")
+    for category in categories:
+        category_id = int(category["id"])
+        name = category.get("name", "")
+        print(f"\n[{category_id}] {name}")
+
+        for stage in client.list_stages(category_id):
+            print(
+                f"  {stage.get('SORT'):>4} | "
+                f"{stage.get('STATUS_ID')} | "
+                f"{stage.get('NAME')} | "
+                f"semantics={stage.get('SEMANTICS', '')}"
+            )
+
 def usage() -> None:
-    print("Usage: python main.py [check|setup|demo|demo-new N|demo-clear]")
+    print("Usage: python main.py [check|setup|demo|demo-new N|demo-clear|inspect]")
 
 
 if __name__ == "__main__":
@@ -52,5 +71,7 @@ if __name__ == "__main__":
         demo(count=count)
     elif command == "demo-clear":
         clear()
+    elif command == "inspect":
+        inspect()
     else:
         usage()

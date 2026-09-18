@@ -12,13 +12,28 @@ class BitrixClient:
 
     def call(self, method: str, params: dict[str, Any] | None = None) -> Any:
         url = f"{self.webhook}/{method}"
-        response = requests.post(url, json=params or {}, timeout=self.timeout)
-        response.raise_for_status()
-        payload = response.json()
+        response = requests.post(
+            url,
+            json=params or {},
+            headers={"Accept": "application/json"},
+            timeout=self.timeout,
+        )
+
+        try:
+            payload = response.json()
+        except ValueError:
+            response.raise_for_status()
+            raise RuntimeError(f"{method}: Bitrix returned a non-JSON response")
+
+        if not response.ok:
+            error = payload.get("error", response.status_code)
+            description = payload.get("error_description", response.text)
+            raise RuntimeError(f"{method}: {error} — {description}")
 
         if "error" in payload:
             raise RuntimeError(
-                f"{method}: {payload.get('error')} — {payload.get('error_description', '')}"
+                f"{method}: {payload.get('error')} — "
+                f"{payload.get('error_description', '')}"
             )
 
         return payload.get("result")
@@ -34,14 +49,20 @@ class BitrixClient:
         result = self.call("department.get", {})
         return result or []
 
-    def list_categories(self) -> list[dict[str, Any]]:
-        result = self.call("crm.category.list", {"entityTypeId": 2})
+    def list_categories(self, entity_type_id: int = 2) -> list[dict[str, Any]]:
+        result = self.call(
+            "crm.category.list",
+            {"entityTypeId": entity_type_id},
+        )
         return (result or {}).get("categories", [])
 
-    def add_category(self, name: str) -> int:
+    def add_category(self, name: str, entity_type_id: int = 2) -> int:
         result = self.call(
             "crm.category.add",
-            {"entityTypeId": 2, "fields": {"name": name}},
+            {
+                "entityTypeId": entity_type_id,
+                "fields": {"name": name},
+            },
         )
         return int(result["category"]["id"])
 
@@ -49,7 +70,10 @@ class BitrixClient:
         entity_id = "DEAL_STAGE" if category_id == 0 else f"DEAL_STAGE_{category_id}"
         result = self.call(
             "crm.status.list",
-            {"filter": {"ENTITY_ID": entity_id}, "order": {"SORT": "ASC"}},
+            {
+                "filter": {"ENTITY_ID": entity_id},
+                "order": {"SORT": "ASC"},
+            },
         )
         return result or []
 
@@ -59,7 +83,7 @@ class BitrixClient:
         name: str,
         status_id: str,
         sort: int,
-        semantics: str = "process",
+        semantics: str = "",
     ) -> Any:
         entity_id = "DEAL_STAGE" if category_id == 0 else f"DEAL_STAGE_{category_id}"
         return self.call(
@@ -75,7 +99,12 @@ class BitrixClient:
             },
         )
 
-    def add_department(self, name: str, parent: int = 0, head_id: int | None = None) -> int:
+    def add_department(
+        self,
+        name: str,
+        parent: int = 0,
+        head_id: int | None = None,
+    ) -> int:
         fields: dict[str, Any] = {
             "NAME": name,
             "PARENT": parent,
@@ -85,7 +114,13 @@ class BitrixClient:
         result = self.call("department.add", fields)
         return int(result)
 
-    def add_user(self, email: str, name: str, last_name: str, department_id: int) -> int:
+    def add_user(
+        self,
+        email: str,
+        name: str,
+        last_name: str,
+        department_id: int,
+    ) -> int:
         result = self.call(
             "user.add",
             {
@@ -106,18 +141,18 @@ class BitrixClient:
         comments: str = "",
     ) -> int:
         result = self.call(
-            "crm.deal.add",
+            "crm.item.add",
             {
+                "entityTypeId": 2,
                 "fields": {
-                    "TITLE": title,
-                    "TYPE_ID": "COMPLEX",
-                    "CATEGORY_ID": category_id,
-                    "STAGE_ID": stage_id,
-                    "ASSIGNED_BY_ID": assigned_by_id,
-                    "OPENED": "Y",
-                    "CLOSED": "N",
-                    "COMMENTS": comments,
-                }
+                    "title": title,
+                    "categoryId": category_id,
+                    "stageId": stage_id,
+                    "assignedById": assigned_by_id,
+                    "opened": "Y",
+                    "closed": "N",
+                    "comments": comments,
+                },
             },
         )
-        return int(result)
+        return int(result["item"]["id"])

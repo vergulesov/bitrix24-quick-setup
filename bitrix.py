@@ -198,7 +198,7 @@ class BitrixClient:
             "crm.item.list",
             {
                 "entityTypeId": 2,
-                "select": ["id", "title", "categoryId", "comments"],
+                "select": ["id", "title", "categoryId", "stageId", "comments"],
                 "filter": filter_data,
             },
         )

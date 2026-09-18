@@ -23,9 +23,19 @@ LEGACY_STAGE_NAMES = {
     "Новая",
     "Подготовка документов",
     "Счёт на предоплату",
+    "Cчёт на предоплату",
     "Финальный счёт",
     "В работе",
     "Анализ причины провала",
+}
+
+LEGACY_STAGE_CODES = {
+    "NEW",
+    "PREPARATION",
+    "PREPAYMENT_INVOICE",
+    "FINAL_INVOICE",
+    "EXECUTING",
+    "APOLOGY",
 }
 
 
@@ -135,7 +145,8 @@ def ensure_stages(client: BitrixClient, category_id: int) -> None:
 
     # Remove only the stock stages from the test pipeline.
     for stage in stages:
-        if stage.get("NAME") in LEGACY_STAGE_NAMES:
+        code = str(stage.get("STATUS_ID", "")).split(":", 1)[-1]
+        if stage.get("NAME") in LEGACY_STAGE_NAMES or code in LEGACY_STAGE_CODES:
             client.delete_status(int(stage["ID"]), forced=True)
 
     stages = client.list_stages(category_id)
@@ -151,8 +162,28 @@ def ensure_stages(client: BitrixClient, category_id: int) -> None:
         or stage.get("EXTRA", {}).get("SEMANTICS") in ("failure", "apology")
     )
 
-    client.update_status(int(success["ID"]), {"NAME": "Выход на работу"})
-    client.update_status(int(failure["ID"]), {"NAME": "Отказ"})
+    # Keep the working stages in the exact business order.
+    process_by_code = {
+        str(stage.get("STATUS_ID", "")).split(":", 1)[-1]: stage
+        for stage in stages
+    }
+    for index, (status_id, _) in enumerate(PROCESS_STAGES, start=1):
+        stage = process_by_code.get(status_id)
+        if not stage:
+            raise RuntimeError(f"Missing process stage: {status_id}")
+        client.update_status(
+            int(stage["ID"]),
+            {"SORT": index * 10},
+        )
+
+    client.update_status(int(success["ID"]), {
+        "NAME": "Выход на работу",
+        "SORT": 80,
+    })
+    client.update_status(int(failure["ID"]), {
+        "NAME": "Отказ",
+        "SORT": 90,
+    })
 
     stages = client.list_stages(category_id)
     actual_names = {stage.get("NAME") for stage in stages}

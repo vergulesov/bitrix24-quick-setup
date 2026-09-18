@@ -4,8 +4,6 @@ from bitrix import BitrixClient
 from config import get_settings
 
 
-# Bitrix uses an empty semantics value for in-progress stages,
-# "S" for success and "F" for failure.
 STAGES = [
     ("NEW_CANDIDATE", "Новый кандидат", 10, ""),
     ("NEEDS_CONTACT", "Требует связи", 20, ""),
@@ -30,21 +28,36 @@ def ensure_pipeline(client: BitrixClient, name: str) -> int:
     existing = find_category(client, name)
     if existing:
         return int(existing["id"])
+
     return client.add_category(name)
 
 
 def ensure_stages(client: BitrixClient, category_id: int) -> None:
     existing = client.list_stages(category_id)
 
-    # For custom deal pipelines Bitrix may return codes such as C1:NEW_CANDIDATE.
     existing_codes = {
         str(stage.get("STATUS_ID", "")).split(":", 1)[-1]
         for stage in existing
     }
 
-    for status_id, name, sort, semantics in STAGES:
+    # Bitrix requires process stages first, then success, then failure.
+    # Start after existing stages to avoid colliding with system final stages.
+    max_sort = max((int(stage.get("SORT", 0) or 0) for stage in existing), default=0)
+    process_sort = max_sort + 10
+
+    for status_id, name, _sort, semantics in STAGES:
         if status_id in existing_codes:
             continue
+
+        if semantics == "":
+            sort = process_sort
+            process_sort += 10
+        elif semantics == "S":
+            sort = process_sort
+            process_sort += 10
+        else:
+            sort = process_sort
+            process_sort += 10
 
         client.add_stage(
             category_id=category_id,

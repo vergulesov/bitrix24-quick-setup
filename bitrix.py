@@ -189,6 +189,30 @@ class BitrixClient:
             },
         )
 
+    def list_deals(self, category_id: int | None = None) -> list[dict[str, Any]]:
+        filter_data: dict[str, Any] = {}
+        if category_id is not None:
+            filter_data["categoryId"] = category_id
+
+        result = self.call(
+            "crm.item.list",
+            {
+                "entityTypeId": 2,
+                "select": ["id", "title", "categoryId", "comments"],
+                "filter": filter_data,
+            },
+        )
+        return (result or {}).get("items", [])
+
+    def delete_deal(self, deal_id: int) -> Any:
+        return self.call(
+            "crm.item.delete",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+            },
+        )
+
     def add_deal(
         self,
         title: str,

@@ -106,7 +106,7 @@ def reset_demo(client: BitrixClient, category_id: int) -> int:
     return removed
 
 
-def random_candidate() -> tuple[str, str, str, str | None, str | None]:
+def random_candidate() -> tuple[str, str, str, str | None, str | None, str | None, str | None, str | None]:
     first = random.choice(FIRST_NAMES)
     surname = random.choice(LAST_NAMES) if random.random() < 0.7 else None
 
@@ -121,7 +121,10 @@ def random_candidate() -> tuple[str, str, str, str | None, str | None]:
     phone = f"+7 9{random.randint(10, 99)} {random.randint(100, 999)}-{random.randint(10, 99)}-{random.randint(10, 99)}" if random.random() < 0.75 else None
     telegram = f"@{first.lower()}_{random.randint(100, 999)}" if random.random() < 0.65 else None
 
-    return person, vacancy, first, surname, phone, telegram
+    whatsapp = phone if phone and random.random() < 0.8 else None
+    max_contact = f"@{first.lower()}_{random.randint(100, 999)}" if random.random() < 0.45 else None
+
+    return person, vacancy, first, surname, phone, telegram, whatsapp, max_contact
 
 
 def demo_timestamps(stage_name: str) -> tuple[str, str | None, str]:
@@ -154,7 +157,7 @@ def seed_demo(
     stages = stage_by_name(client, category_id)
 
     for _ in range(count):
-        person, vacancy, first, surname, phone, telegram = random_candidate()
+        person, vacancy, first, surname, phone, telegram, whatsapp, max_contact = random_candidate()
         stage_name = random.choice(STAGES)
         stage_id = stages.get(stage_name)
 
@@ -169,6 +172,8 @@ def seed_demo(
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: surname or "",
             DEAL_FIELD_CODES["CANDIDATE_PHONE"]: phone or "",
             DEAL_FIELD_CODES["CANDIDATE_TELEGRAM"]: telegram or "",
+            DEAL_FIELD_CODES["CANDIDATE_WHATSAPP"]: whatsapp or "",
+            DEAL_FIELD_CODES["CANDIDATE_MAX"]: max_contact or "",
             DEAL_FIELD_CODES["DESIRED_POSITION"]: vacancy,
             DEAL_FIELD_CODES["DIRECTION"]: DIRECTIONS[vacancy],
             DEAL_FIELD_CODES["VACANCY"]: vacancy,
@@ -198,6 +203,8 @@ def seed_demo(
             f"Created: {person} — {vacancy} — {stage_name}"
             f" | phone={'yes' if phone else 'no'}"
             f" | tg={'yes' if telegram else 'no'}"
+            f" | wa={'yes' if whatsapp else 'no'}"
+            f" | max={'yes' if max_contact else 'no'}"
             f" | blocker={blocker}"
         )
 

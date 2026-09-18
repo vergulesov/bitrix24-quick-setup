@@ -136,7 +136,7 @@ def ensure_stages(client: BitrixClient, category_id: int) -> None:
     # Remove only the stock stages from the test pipeline.
     for stage in stages:
         if stage.get("NAME") in LEGACY_STAGE_NAMES:
-            client.delete_status(int(stage["ID"]))
+            client.delete_status(int(stage["ID"]), forced=True)
 
     stages = client.list_stages(category_id)
 

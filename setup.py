@@ -44,10 +44,33 @@ def ensure_pipeline(client: BitrixClient, name: str) -> int:
 
 
 def ensure_department(client: BitrixClient, name: str, head_id: int) -> int:
-    for department in client.list_departments():
+    departments = client.list_departments()
+
+    for department in departments:
         if department.get("NAME") == name:
             return int(department["ID"])
-    return client.add_department(name=name, head_id=head_id)
+
+    # Bitrix allows only one top-level department. New departments
+    # therefore have to be created under the existing company root.
+    root = next(
+        (
+            department
+            for department in departments
+            if not department.get("PARENT")
+        ),
+        None,
+    )
+
+    if not root:
+        raise RuntimeError(
+            "Company root department was not found; cannot create recruitment department."
+        )
+
+    return client.add_department(
+        name=name,
+        parent=int(root["ID"]),
+        head_id=head_id,
+    )
 
 
 def ensure_stages(client: BitrixClient, category_id: int) -> None:

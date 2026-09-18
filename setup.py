@@ -4,16 +4,14 @@ from bitrix import BitrixClient
 from config import get_settings
 
 
-STAGES = [
-    ("NEW_CANDIDATE", "Новый кандидат", 10, ""),
-    ("NEEDS_CONTACT", "Требует связи", 20, ""),
-    ("CONTACTED", "Связались", 30, ""),
-    ("QUALIFICATION", "Квалификация", 40, ""),
-    ("INTERVIEW", "Интервью", 50, ""),
-    ("WAITING_DECISION", "Ожидаем решение", 60, ""),
-    ("SENT_TO_CLIENT", "Передан заказчику", 70, ""),
-    ("STARTED", "Выход на работу", 80, "S"),
-    ("REJECTED", "Отказ", 90, "F"),
+PROCESS_STAGES = [
+    ("NEW_CANDIDATE", "Новый кандидат"),
+    ("NEEDS_CONTACT", "Требует связи"),
+    ("CONTACTED", "Связались"),
+    ("QUALIFICATION", "Квалификация"),
+    ("INTERVIEW", "Интервью"),
+    ("WAITING_DECISION", "Ожидаем решение"),
+    ("SENT_TO_CLIENT", "Передан заказчику"),
 ]
 
 
@@ -34,55 +32,64 @@ def ensure_pipeline(client: BitrixClient, name: str) -> int:
 def ensure_stages(client: BitrixClient, category_id: int) -> None:
     existing = client.list_stages(category_id)
 
+    # New Bitrix deal pipelines already contain final Success/Failure stages.
+    # Reuse those system stages instead of creating additional final stages.
+    success = next(
+        (
+            stage
+            for stage in existing
+            if stage.get("SEMANTICS") == "S"
+            or stage.get("EXTRA", {}).get("SEMANTICS") == "success"
+        ),
+        None,
+    )
+    failure = next(
+        (
+            stage
+            for stage in existing
+            if stage.get("SEMANTICS") == "F"
+            or stage.get("EXTRA", {}).get("SEMANTICS") in ("failure", "apology")
+        ),
+        None,
+    )
+
+    if not success or not failure:
+        raise RuntimeError(
+            "Bitrix final Success/Failure stages were not found in the pipeline."
+        )
+
     existing_codes = {
         str(stage.get("STATUS_ID", "")).split(":", 1)[-1]
         for stage in existing
     }
 
-    # Bitrix requires: In Progress -> Success -> Failure.
-    # Put our process stages before the first final stage.
-    final_sorts = [
-        int(stage.get("SORT", 0) or 0)
-        for stage in existing
-        if stage.get("SEMANTICS") in ("S", "F")
+    first_final_sort = min(
+        int(success.get("SORT", 0) or 0),
+        int(failure.get("SORT", 0) or 0),
+    )
+
+    missing = [
+        item for item in PROCESS_STAGES
+        if item[0] not in existing_codes
     ]
-    first_final_sort = min(final_sorts, default=1000)
 
-    # Reserve enough room below the first final stage.
-    missing_process = [
-        item for item in STAGES
-        if item[0] not in existing_codes and item[3] == ""
-    ]
-    process_step = max(1, first_final_sort // (len(missing_process) + 1))
+    if missing:
+        step = max(1, first_final_sort // (len(missing) + 1))
+        sort = step
 
-    sort = process_step
-    for status_id, name, _configured_sort, semantics in STAGES:
-        if status_id in existing_codes:
-            continue
+        for status_id, name in missing:
+            client.add_stage(
+                category_id=category_id,
+                name=name,
+                status_id=status_id,
+                sort=sort,
+                semantics="",
+            )
+            sort += step
 
-        if semantics == "":
-            stage_sort = sort
-            sort += process_step
-            if stage_sort >= first_final_sort:
-                raise RuntimeError(
-                    "Not enough SORT space before Bitrix final stages"
-                )
-        elif semantics == "S":
-            # Keep success before failure.
-            stage_sort = first_final_sort
-        else:
-            stage_sort = max(
-                [int(stage.get("SORT", 0) or 0) for stage in existing]
-                + [first_final_sort]
-            ) + 10
-
-        client.add_stage(
-            category_id=category_id,
-            name=name,
-            status_id=status_id,
-            sort=stage_sort,
-            semantics=semantics,
-        )
+    # Rename the existing final stages to the business names we need.
+    client.update_status(int(success["ID"]), {"NAME": "Выход на работу"})
+    client.update_status(int(failure["ID"]), {"NAME": "Отказ"})
 
 
 def setup() -> int:
@@ -99,6 +106,6 @@ def setup() -> int:
     print(f"Pipeline: Подбор персонала (ID {pipeline_id})")
 
     ensure_stages(client, pipeline_id)
-    print(f"Stages configured: {len(STAGES)}")
+    print("Stages configured: 9")
 
     return pipeline_id

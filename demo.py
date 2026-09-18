@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from datetime import datetime, timedelta, timezone
 
 from bitrix import BitrixClient
 from schema import DEAL_FIELD_CODES
@@ -36,17 +37,56 @@ DIRECTIONS = {
 }
 
 SOURCES = ["HH.ru", "Telegram", "Сайт", "Рекомендация"]
+
 STAGES = [
     "Новый кандидат",
-    "Требует связи",
-    "Связались",
     "Квалификация",
     "Интервью",
     "Ожидаем решение",
+    "Документы",
     "Передан заказчику",
     "Выход на работу",
     "Отказ",
 ]
+
+CLIENTS = [
+    "ООО «Стандарт»",
+    "ООО «Вектор»",
+    "ООО «Логистик Плюс»",
+    "ООО «Север»",
+]
+
+SCENARIOS = {
+    "Новый кандидат": [
+        ("Нужно ответить", "Связаться"),
+        ("Нужно ответить", "Ответить кандидату"),
+    ],
+    "Квалификация": [
+        ("Не хватает информации", "Уточнить опыт"),
+        ("Назначить интервью", "Назначить интервью"),
+    ],
+    "Интервью": [
+        ("Ждём кандидата", "Провести интервью"),
+        ("Назначить интервью", "Согласовать время интервью"),
+    ],
+    "Ожидаем решение": [
+        ("Ждём кандидата", "Получить подтверждение кандидата"),
+        ("Ждём заказчика", "Уточнить решение заказчика"),
+    ],
+    "Документы": [
+        ("Ждём кандидата", "Получить комплект документов"),
+        ("Не хватает информации", "Проверить документы"),
+    ],
+    "Передан заказчику": [
+        ("Ждём заказчика", "Получить обратную связь"),
+    ],
+    "Выход на работу": [
+        ("Другое", "Контроль выхода"),
+    ],
+    "Отказ": [
+        ("Другое", "Зафиксировать причину отказа"),
+    ],
+}
 
 
 def stage_by_name(client: BitrixClient, category_id: int) -> dict[str, str]:
@@ -66,19 +106,43 @@ def reset_demo(client: BitrixClient, category_id: int) -> int:
     return removed
 
 
-def random_candidate(index: int) -> tuple[str, str, str]:
+def random_candidate() -> tuple[str, str, str, str | None, str | None]:
     first = random.choice(FIRST_NAMES)
+    surname = random.choice(LAST_NAMES) if random.random() < 0.7 else None
 
-    # Roughly 60% of candidates have a surname already known.
-    if random.random() < 0.6:
-        surname = random.choice(LAST_NAMES)
+    if surname:
         person = f"{first} {surname}"
     else:
         person = first
 
     vacancy = random.choice(VACANCIES)
-    stage = random.choice(STAGES)
-    return person, vacancy, stage
+
+    # Contacts are intentionally incomplete in the demo.
+    phone = f"+7 9{random.randint(10, 99)} {random.randint(100, 999)}-{random.randint(10, 99)}-{random.randint(10, 99)}" if random.random() < 0.75 else None
+    telegram = f"@{first.lower()}_{random.randint(100, 999)}" if random.random() < 0.65 else None
+
+    return person, vacancy, first, surname, phone, telegram
+
+
+def demo_timestamps(stage_name: str) -> tuple[str, str | None, str]:
+    now = datetime.now(timezone.utc)
+
+    if stage_name == "Новый кандидат":
+        age_minutes = random.choice([8, 18, 35, 65, 125, 210])
+        inbound = now - timedelta(minutes=age_minutes)
+        deadline = inbound + timedelta(hours=2)
+        response = None
+        return inbound.isoformat(timespec="seconds"), response, deadline.isoformat(timespec="seconds")
+
+    if stage_name in {"Квалификация", "Интервью"}:
+        age_hours = random.choice([3, 6, 12, 24, 36])
+    else:
+        age_hours = random.choice([12, 24, 36, 48, 72, 120])
+
+    inbound = now - timedelta(hours=age_hours)
+    response = inbound + timedelta(minutes=random.choice([20, 45, 90]))
+    deadline = inbound + timedelta(hours=2)
+    return inbound.isoformat(timespec="seconds"), response.isoformat(timespec="seconds"), deadline.isoformat(timespec="seconds")
 
 
 def seed_demo(
@@ -89,47 +153,40 @@ def seed_demo(
 ) -> None:
     stages = stage_by_name(client, category_id)
 
-    for index in range(count):
-        person, vacancy, stage_name = random_candidate(index)
+    for _ in range(count):
+        person, vacancy, first, surname, phone, telegram = random_candidate()
+        stage_name = random.choice(STAGES)
         stage_id = stages.get(stage_name)
 
         if not stage_id:
             raise RuntimeError(f"Stage not found: {stage_name}")
 
+        blocker, next_step = random.choice(SCENARIOS[stage_name])
+        inbound_at, response_at, deadline_at = demo_timestamps(stage_name)
+
         fields = {
+            DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: first,
+            DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: surname or "",
+            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: phone or "",
+            DEAL_FIELD_CODES["CANDIDATE_TELEGRAM"]: telegram or "",
             DEAL_FIELD_CODES["DESIRED_POSITION"]: vacancy,
             DEAL_FIELD_CODES["DIRECTION"]: DIRECTIONS[vacancy],
             DEAL_FIELD_CODES["VACANCY"]: vacancy,
-            DEAL_FIELD_CODES["CLIENT_COMPANY"]: random.choice(
-                ["ООО «Стандарт»", "ООО «Вектор»", "ООО «Логистик Плюс»"]
-            ),
+            DEAL_FIELD_CODES["CLIENT_COMPANY"]: random.choice(CLIENTS),
             DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: random.choice(SOURCES),
-            DEAL_FIELD_CODES["PRIORITY"]: random.choice(
-                ["Высокий", "Средний", "Низкий"]
-            ),
-            DEAL_FIELD_CODES["BLOCKER"]: random.choice(
-                [
-                    "Нужно ответить",
-                    "Не хватает информации",
-                    "Ждём кандидата",
-                    "Ждём заказчика",
-                    "Назначить интервью",
-                ]
-            ),
-            DEAL_FIELD_CODES["NEXT_STEP"]: random.choice(
-                [
-                    "Ответить кандидату",
-                    "Позвонить кандидату",
-                    "Уточнить опыт",
-                    "Назначить интервью",
-                    "Запросить документы",
-                    "Уточнить решение",
-                ]
+            DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound_at,
+            DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response_at or "",
+            DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline_at,
+            DEAL_FIELD_CODES["PRIORITY"]: random.choice(["Высокий", "Средний", "Низкий"]),
+            DEAL_FIELD_CODES["BLOCKER"]: blocker,
+            DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
+            DEAL_FIELD_CODES["NEXT_ACTION_AT"]: (
+                (datetime.now(timezone.utc) + timedelta(minutes=random.choice([30, 60, 120, 240]))).isoformat(timespec="seconds")
             ),
         }
 
         client.add_deal(
-            title=person,
+            title=f"{person} · {vacancy}",
             category_id=category_id,
             stage_id=stage_id,
             assigned_by_id=user_id,
@@ -137,7 +194,12 @@ def seed_demo(
             fields=fields,
         )
 
-        print(f"Created: {person} — {vacancy} — {stage_name}")
+        print(
+            f"Created: {person} — {vacancy} — {stage_name}"
+            f" | phone={'yes' if phone else 'no'}"
+            f" | tg={'yes' if telegram else 'no'}"
+            f" | blocker={blocker}"
+        )
 
 
 def run(

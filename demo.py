@@ -9,15 +9,22 @@ from schema import DEAL_FIELD_CODES
 
 DEMO_COMMENT = "Синтетические демо-данные для тестовой презентации."
 
-FIRST_NAMES = [
-    "Василий", "Пётр", "Анна", "Сергей", "Ольга", "Дмитрий",
-    "Екатерина", "Наталья", "Андрей", "Марина", "Александр", "Ирина",
-    "Максим", "Елена", "Артём", "Виктория", "Роман", "Юлия",
+MALE_LAST_NAMES = [
+    "Петров", "Кузнецов", "Волков", "Орлов", "Васильев", "Иванов",
 ]
 
-LAST_NAMES = [
-    "Петров", "Соколова", "Кузнецов", "Морозова", "Волков", "Лебедева",
-    "Орлов", "Фёдорова", "Васильев", "Смирнова", "Иванов", "Попова",
+FEMALE_LAST_NAMES = [
+    "Соколова", "Морозова", "Лебедева", "Фёдорова", "Смирнова", "Попова",
+]
+
+MALE_FIRST_NAMES = [
+    "Василий", "Пётр", "Сергей", "Дмитрий", "Андрей", "Александр",
+    "Максим", "Артём", "Виктор", "Роман",
+]
+
+FEMALE_FIRST_NAMES = [
+    "Анна", "Ольга", "Екатерина", "Наталья", "Марина", "Ирина",
+    "Елена", "Виктория", "Юлия",
 ]
 
 VACANCIES = [
@@ -107,8 +114,9 @@ def reset_demo(client: BitrixClient, category_id: int) -> int:
 
 
 def random_candidate() -> tuple[str, str, str, str | None, str | None, str | None, str | None, str | None]:
-    first = random.choice(FIRST_NAMES)
-    surname = random.choice(LAST_NAMES) if random.random() < 0.7 else None
+    is_male = random.random() < 0.55
+    first = random.choice(MALE_FIRST_NAMES if is_male else FEMALE_FIRST_NAMES)
+    surname = random.choice(MALE_LAST_NAMES if is_male else FEMALE_LAST_NAMES) if random.random() < 0.7 else None
 
     if surname:
         person = f"{first} {surname}"

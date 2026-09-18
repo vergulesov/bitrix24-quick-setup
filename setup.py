@@ -9,11 +9,10 @@ from schema import DEAL_FIELD_CODES, DEAL_FIELD_SPECS
 
 PROCESS_STAGES = [
     ("NEW_CANDIDATE", "Новый кандидат"),
-    ("NEEDS_CONTACT", "Требует связи"),
-    ("CONTACTED", "Связались"),
     ("QUALIFICATION", "Квалификация"),
     ("INTERVIEW", "Интервью"),
     ("WAITING_DECISION", "Ожидаем решение"),
+    ("DOCUMENTS", "Документы"),
     ("SENT_TO_CLIENT", "Передан заказчику"),
 ]
 
@@ -36,6 +35,8 @@ LEGACY_STAGE_CODES = {
     "FINAL_INVOICE",
     "EXECUTING",
     "APOLOGY",
+    "NEEDS_CONTACT",
+    "CONTACTED",
 }
 
 
@@ -178,11 +179,11 @@ def ensure_stages(client: BitrixClient, category_id: int) -> None:
 
     client.update_status(int(success["ID"]), {
         "NAME": "Выход на работу",
-        "SORT": 80,
+        "SORT": 70,
     })
     client.update_status(int(failure["ID"]), {
         "NAME": "Отказ",
-        "SORT": 90,
+        "SORT": 80,
     })
 
     stages = client.list_stages(category_id)
@@ -259,7 +260,10 @@ def configure_deal_card(
             "type": "section",
             "elements": [
                 {"name": "TITLE", "optionFlags": 1},
+                {"name": fields["CANDIDATE_FIRST_NAME"], "optionFlags": 1},
+                {"name": fields["CANDIDATE_LAST_NAME"], "optionFlags": 1},
                 {"name": fields["CANDIDATE_PHONE"], "optionFlags": 1},
+                {"name": fields["CANDIDATE_TELEGRAM"], "optionFlags": 1},
                 {"name": fields["DESIRED_POSITION"], "optionFlags": 1},
                 {"name": fields["DIRECTION"], "optionFlags": 1},
                 {"name": fields["VACANCY"], "optionFlags": 1},
@@ -316,7 +320,7 @@ def setup() -> int:
     print(f"Pipeline: Подбор персонала (ID {pipeline_id})")
 
     ensure_stages(client, pipeline_id)
-    print("Stages configured: 9")
+    print("Stages configured: 8")
 
     ensure_deal_fields(client)
     configure_deal_card(client, pipeline_id)

@@ -204,6 +204,16 @@ class BitrixClient:
         )
         return (result or {}).get("items", [])
 
+    def update_deal_stage(self, deal_id: int, stage_id: str) -> Any:
+        return self.call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "fields": {"stageId": stage_id},
+            },
+        )
+
     def delete_deal(self, deal_id: int) -> Any:
         return self.call(
             "crm.item.delete",

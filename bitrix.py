@@ -42,12 +42,48 @@ class BitrixClient:
         return self.call("user.current")
 
     def list_users(self, limit: int = 50) -> list[dict[str, Any]]:
-        result = self.call("user.get", {"FILTER": {}, "SORT": "ID", "ORDER": "ASC"})
+        result = self.call(
+            "user.get",
+            {"FILTER": {}, "SORT": "ID", "ORDER": "ASC"},
+        )
         return (result or [])[:limit]
 
     def list_departments(self) -> list[dict[str, Any]]:
         result = self.call("department.get", {})
         return result or []
+
+    def add_department(
+        self,
+        name: str,
+        parent: int = 0,
+        head_id: int | None = None,
+    ) -> int:
+        fields: dict[str, Any] = {
+            "NAME": name,
+            "PARENT": parent,
+        }
+        if head_id is not None:
+            fields["UF_HEAD"] = head_id
+        result = self.call("department.add", fields)
+        return int(result)
+
+    def add_user(
+        self,
+        email: str,
+        name: str,
+        last_name: str,
+        department_id: int,
+    ) -> int:
+        result = self.call(
+            "user.add",
+            {
+                "EMAIL": email,
+                "NAME": name,
+                "LAST_NAME": last_name,
+                "UF_DEPARTMENT": [department_id],
+            },
+        )
+        return int(result)
 
     def list_categories(self, entity_type_id: int = 2) -> list[dict[str, Any]]:
         result = self.call(
@@ -83,6 +119,12 @@ class BitrixClient:
             {"id": status_id, "fields": fields},
         )
 
+    def delete_status(self, status_id: int, forced: bool = False) -> Any:
+        params: dict[str, Any] = {"id": status_id}
+        if forced:
+            params["params"] = {"FORCED": "Y"}
+        return self.call("crm.status.delete", params)
+
     def add_stage(
         self,
         category_id: int,
@@ -105,38 +147,47 @@ class BitrixClient:
             },
         )
 
-    def add_department(
-        self,
-        name: str,
-        parent: int = 0,
-        head_id: int | None = None,
-    ) -> int:
-        fields: dict[str, Any] = {
-            "NAME": name,
-            "PARENT": parent,
-        }
-        if head_id is not None:
-            fields["UF_HEAD"] = head_id
-        result = self.call("department.add", fields)
-        return int(result)
-
-    def add_user(
-        self,
-        email: str,
-        name: str,
-        last_name: str,
-        department_id: int,
-    ) -> int:
+    def list_deal_userfields(self) -> list[dict[str, Any]]:
         result = self.call(
-            "user.add",
+            "crm.deal.userfield.list",
             {
-                "EMAIL": email,
-                "NAME": name,
-                "LAST_NAME": last_name,
-                "UF_DEPARTMENT": [department_id],
+                "filter": {},
+                "order": {"SORT": "ASC", "ID": "ASC"},
             },
         )
+        return result or []
+
+    def add_deal_userfield(self, fields: dict[str, Any]) -> int:
+        result = self.call(
+            "crm.deal.userfield.add",
+            {"fields": fields},
+        )
         return int(result)
+
+    def update_deal_userfield(
+        self,
+        field_id: int,
+        fields: dict[str, Any],
+    ) -> Any:
+        return self.call(
+            "crm.deal.userfield.update",
+            {"id": field_id, "fields": fields},
+        )
+
+    def set_deal_card_configuration(
+        self,
+        category_id: int,
+        data: list[dict[str, Any]],
+    ) -> Any:
+        return self.call(
+            "crm.item.details.configuration.set",
+            {
+                "entityTypeId": 2,
+                "scope": "C",
+                "extras": {"dealCategoryId": category_id},
+                "data": data,
+            },
+        )
 
     def add_deal(
         self,
@@ -145,20 +196,26 @@ class BitrixClient:
         stage_id: str,
         assigned_by_id: int,
         comments: str = "",
+        fields: dict[str, Any] | None = None,
     ) -> int:
+        deal_fields: dict[str, Any] = {
+            "title": title,
+            "categoryId": category_id,
+            "stageId": stage_id,
+            "assignedById": assigned_by_id,
+            "opened": "Y",
+            "closed": "N",
+            "comments": comments,
+        }
+        if fields:
+            deal_fields.update(fields)
+
         result = self.call(
             "crm.item.add",
             {
                 "entityTypeId": 2,
-                "fields": {
-                    "title": title,
-                    "categoryId": category_id,
-                    "stageId": stage_id,
-                    "assignedById": assigned_by_id,
-                    "opened": "Y",
-                    "closed": "N",
-                    "comments": comments,
-                },
+                "fields": deal_fields,
+                "useOriginalUfNames": True,
             },
         )
         return int(result["item"]["id"])

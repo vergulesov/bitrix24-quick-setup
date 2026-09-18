@@ -144,7 +144,25 @@ def ensure_stages(client: BitrixClient, category_id: int) -> None:
 
     desired_names = {name for _, name in PROCESS_STAGES} | FINAL_STAGE_NAMES
 
-    # Remove only the stock stages from the test pipeline.
+    # Legacy stages cannot be deleted while deals still reference them.
+    # Move those deals into the new first stage, then remove the legacy statuses.
+    legacy_ids = {
+        str(stage.get("STATUS_ID"))
+        for stage in stages
+        if stage.get("NAME") in LEGACY_STAGE_NAMES
+        or str(stage.get("STATUS_ID", "")).split(":", 1)[-1] in LEGACY_STAGE_CODES
+    }
+    if legacy_ids:
+        deals = client.list_deals(category_id)
+        new_stage_id = f"C{category_id}:NEW_CANDIDATE"
+        moved = 0
+        for deal in deals:
+            if str(deal.get("stageId", "")) in legacy_ids:
+                client.update_deal_stage(int(deal["id"]), new_stage_id)
+                moved += 1
+        if moved:
+            print(f"Legacy deals moved to Новый кандидат: {moved}")
+
     for stage in stages:
         code = str(stage.get("STATUS_ID", "")).split(":", 1)[-1]
         if stage.get("NAME") in LEGACY_STAGE_NAMES or code in LEGACY_STAGE_CODES:

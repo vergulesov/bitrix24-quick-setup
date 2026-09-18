@@ -190,14 +190,16 @@ def seed_demo(
             ),
         }
 
-        client.add_deal(
-            title=f"{person} · {vacancy}",
+        deal_id = client.add_deal(
+            title=f"{person} · {phone}" if phone else person,
             category_id=category_id,
             stage_id=stage_id,
             assigned_by_id=user_id,
             comments=DEMO_COMMENT,
             fields=fields,
         )
+
+        add_demo_timeline(client, deal_id, person, vacancy, stage_name, inbound_at, response_at)
 
         print(
             f"Created: {person} — {vacancy} — {stage_name}"
@@ -207,6 +209,42 @@ def seed_demo(
             f" | max={'yes' if max_contact else 'no'}"
             f" | blocker={blocker}"
         )
+
+
+def add_demo_timeline(
+    client: BitrixClient,
+    deal_id: int,
+    person: str,
+    vacancy: str,
+    stage_name: str,
+    inbound_at: str,
+    response_at: str | None,
+) -> None:
+    messages = [
+        f"[{inbound_at}] Кандидат: «Здравствуйте! Подскажите, пожалуйста, вакансия «{vacancy}» ещё актуальна?»",
+    ]
+
+    if response_at:
+        messages.append(
+            f"[{response_at}] Рекрутер: «Здравствуйте, {person.split()[0]}! Да, вакансия актуальна. Давайте уточним несколько деталей.»"
+        )
+
+    if stage_name in {"Квалификация", "Интервью", "Ожидаем решение", "Документы", "Передан заказчику", "Выход на работу", "Отказ"}:
+        messages.append(
+            f"[сегодня] Кандидат: «Да, готов продолжить. Когда можем обсудить следующий шаг?»"
+        )
+
+    if stage_name == "Документы":
+        messages.append("[сегодня] Рекрутер: «Отлично. Тогда жду комплект документов для оформления.»")
+    elif stage_name == "Передан заказчику":
+        messages.append("[сегодня] Рекрутер: «Передал ваш профиль заказчику. Вернусь с обратной связью.»")
+    elif stage_name == "Выход на работу":
+        messages.append("[сегодня] Рекрутер: «Выход подтверждён. Остаёмся на связи.»")
+    elif stage_name == "Отказ":
+        messages.append("[сегодня] Рекрутер: «Спасибо за обратную связь. Зафиксировал результат.»")
+
+    for message in messages:
+        client.add_timeline_comment(deal_id, message)
 
 
 def run(

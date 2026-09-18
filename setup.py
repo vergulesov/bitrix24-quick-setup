@@ -28,7 +28,6 @@ def ensure_pipeline(client: BitrixClient, name: str) -> int:
     existing = find_category(client, name)
     if existing:
         return int(existing["id"])
-
     return client.add_category(name)
 
 
@@ -40,30 +39,48 @@ def ensure_stages(client: BitrixClient, category_id: int) -> None:
         for stage in existing
     }
 
-    # Bitrix requires process stages first, then success, then failure.
-    # Start after existing stages to avoid colliding with system final stages.
-    max_sort = max((int(stage.get("SORT", 0) or 0) for stage in existing), default=0)
-    process_sort = max_sort + 10
+    # Bitrix requires: In Progress -> Success -> Failure.
+    # Put our process stages before the first final stage.
+    final_sorts = [
+        int(stage.get("SORT", 0) or 0)
+        for stage in existing
+        if stage.get("SEMANTICS") in ("S", "F")
+    ]
+    first_final_sort = min(final_sorts, default=1000)
 
-    for status_id, name, _sort, semantics in STAGES:
+    # Reserve enough room below the first final stage.
+    missing_process = [
+        item for item in STAGES
+        if item[0] not in existing_codes and item[3] == ""
+    ]
+    process_step = max(1, first_final_sort // (len(missing_process) + 1))
+
+    sort = process_step
+    for status_id, name, _configured_sort, semantics in STAGES:
         if status_id in existing_codes:
             continue
 
         if semantics == "":
-            sort = process_sort
-            process_sort += 10
+            stage_sort = sort
+            sort += process_step
+            if stage_sort >= first_final_sort:
+                raise RuntimeError(
+                    "Not enough SORT space before Bitrix final stages"
+                )
         elif semantics == "S":
-            sort = process_sort
-            process_sort += 10
+            # Keep success before failure.
+            stage_sort = first_final_sort
         else:
-            sort = process_sort
-            process_sort += 10
+            stage_sort = max(
+                [int(stage.get("SORT", 0) or 0) for stage in existing]
+                + [first_final_sort]
+            ) + 10
 
         client.add_stage(
             category_id=category_id,
             name=name,
             status_id=status_id,
-            sort=sort,
+            sort=stage_sort,
             semantics=semantics,
         )
 

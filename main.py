@@ -36,6 +36,29 @@ def clear() -> None:
 
 
 
+
+def cleanup_old_test() -> None:
+    """Удалить старые ручные тестовые CRM-сущности, не затрагивая Open Line deal 423."""
+    client = make_client()
+
+    try:
+        result = client.call(
+            "crm.item.delete",
+            {"entityTypeId": 2, "id": 419},
+        )
+        print(f"Deleted old test deal 419: {result}")
+    except Exception as exc:
+        print(f"Deal 419: {exc}")
+
+    try:
+        result = client.call(
+            "crm.item.delete",
+            {"entityTypeId": 3, "id": 3},
+        )
+        print(f"Deleted old test contact 3: {result}")
+    except Exception as exc:
+        print(f"Contact 3: {exc}")
+
 def inspect() -> None:
     client = make_client()
     categories = client.list_categories()
@@ -55,7 +78,7 @@ def inspect() -> None:
             )
 
 def usage() -> None:
-    print("Usage: python main.py [check|setup|demo|demo-new N|demo-clear|restore-test|inspect]")
+    print("Usage: python main.py [check|setup|demo|demo-new N|demo-clear|restore-test|cleanup-old-test|inspect]")
 
 
 if __name__ == "__main__":
@@ -74,6 +97,8 @@ if __name__ == "__main__":
         clear()
     elif command == "restore-test":
         restore_test(make_client())
+    elif command == "cleanup-old-test":
+        cleanup_old_test()
     elif command == "inspect":
         inspect()
     else:

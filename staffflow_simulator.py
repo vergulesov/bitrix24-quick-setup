@@ -659,7 +659,7 @@ class App:
             self.root.after(
                 0,
                 lambda: self.status.set(
-                    f"Создано {self.created} / {len(SLA_SCENARIO)}: "
+                    f"Создано {self.created} / {len(WORKDAY_SCENARIO)}: "
                     f"{name} — {priority} — {timing}"
                 ),
             )
@@ -676,7 +676,7 @@ class App:
             messagebox.showerror("Ошибка", "Интервал должен быть целым числом.")
             return
 
-        if self.scenario_index >= len(SLA_SCENARIO):
+        if self.scenario_index >= len(WORKDAY_SCENARIO):
             messagebox.showinfo("Сценарий", "Сценарий уже завершён. Нажмите «Сбросить сценарий».")
             return
 
@@ -690,22 +690,22 @@ class App:
         self.thread.start()
 
     def loop(self, interval):
-        while self.running and self.scenario_index < len(SLA_SCENARIO):
+        while self.running and self.scenario_index < len(WORKDAY_SCENARIO):
             self._create_next_worker()
-            if self.running and self.scenario_index < len(SLA_SCENARIO):
+            if self.running and self.scenario_index < len(WORKDAY_SCENARIO):
                 time.sleep(interval)
 
         self.running = False
         self.root.after(
             0,
             lambda: self.status.set(
-                f"Сценарий завершён: {self.created} / {len(SLA_SCENARIO)}"
+                f"Сценарий завершён: {self.created} / {len(WORKDAY_SCENARIO)}"
             ),
         )
 
     def pause(self):
         self.running = False
-        self.status.set(f"Пауза: {self.created} / {len(SLA_SCENARIO)}")
+        self.status.set(f"Пауза: {self.created} / {len(WORKDAY_SCENARIO)}")
 
     def reset_scenario(self):
         self.pause()

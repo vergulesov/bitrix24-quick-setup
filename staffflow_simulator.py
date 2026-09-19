@@ -19,6 +19,10 @@ if not WEBHOOK:
 
 PIPELINE_NAME = "Подбор персонала"
 DEMO_COMMENT = "SLA DEMO DATA"
+CONNECTOR_URL = os.getenv("STAFFFLOW_CONNECTOR_URL", "https://195-19-195-13.sslip.io")
+CONNECTOR_TOKEN = os.getenv("STAFFFLOW_SEND_TOKEN", "")
+CONNECTOR_ID = "staffflow_test"
+OPEN_LINE_ID = 1
 
 SLA_SCENARIO = [
     # name, vacancy, priority, minutes_to_deadline, answered
@@ -91,6 +95,53 @@ def get_stages(category_id):
 
 def get_current_user_id():
     return int(call("user.current")["ID"])
+
+
+def check_connector():
+    response = requests.get(CONNECTOR_URL.rstrip("/"), timeout=8)
+    response.raise_for_status()
+    return True
+
+
+def check_openline():
+    result = call(
+        "imconnector.status",
+        {"CONNECTOR": CONNECTOR_ID, "LINE": OPEN_LINE_ID},
+    )
+    if not result:
+        raise RuntimeError("Bitrix не вернул статус Open Channel.")
+    if not result.get("CONFIGURED") or not result.get("STATUS"):
+        raise RuntimeError(f"Open Channel не готов: {result}")
+    return result
+
+
+def send_openline_test():
+    if not CONNECTOR_TOKEN:
+        raise RuntimeError(
+            "Не задан STAFFFLOW_SEND_TOKEN в .env. "
+            "Health-check без него проверяет только доступность connector/Open Channel."
+        )
+
+    stamp = int(time.time())
+    payload = {
+        "token": CONNECTOR_TOKEN,
+        "user_id": f"health-user-{stamp}",
+        "user_name": "StaffFlow Health Check",
+        "message_id": f"health-msg-{stamp}",
+        "chat_id": f"health-chat-{stamp}",
+        "chat_name": "StaffFlow Health Check",
+        "text": "StaffFlow health-check: входящее тестовое сообщение.",
+    }
+    response = requests.post(
+        CONNECTOR_URL.rstrip("/") + "/send",
+        json=payload,
+        timeout=20,
+    )
+    response.raise_for_status()
+    data = response.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"Connector /send вернул ошибку: {data}")
+    return data
 
 
 def stage_map(category_id):
@@ -314,6 +365,30 @@ class App:
 
         ttk.Label(
             frame,
+            text="Статус стенда",
+            font=("Segoe UI", 12, "bold"),
+        ).pack(anchor="w")
+
+        self.health_status = tk.StringVar(
+            value="⚪ Не проверен"
+        )
+        ttk.Label(
+            frame,
+            textvariable=self.health_status,
+            justify="left",
+            font=("Segoe UI", 10),
+        ).pack(anchor="w", pady=6)
+
+        ttk.Button(
+            frame,
+            text="🔍 ПРОВЕРИТЬ DEMO",
+            command=self.health_check,
+        ).pack(anchor="w", pady=(0, 10))
+
+        ttk.Separator(frame).pack(fill="x", pady=10)
+
+        ttk.Label(
+            frame,
             text="Контроль стенда",
             font=("Segoe UI", 12, "bold"),
         ).pack(anchor="w")
@@ -369,6 +444,49 @@ class App:
         missing = [x for x in WORK_STAGES if x not in self.stages]
         if missing:
             raise RuntimeError("Не найдены стадии: " + ", ".join(missing))
+
+    def health_check(self):
+        threading.Thread(target=self._health_check_worker, daemon=True).start()
+
+    def _health_check_worker(self):
+        results = []
+        try:
+            self.ensure_ready()
+            results.append("🟢 Bitrix REST — OK")
+        except Exception as error:
+            results.append(f"🔴 Bitrix REST — {error}")
+
+        try:
+            check_connector()
+            results.append("🟢 Connector — OK")
+        except Exception as error:
+            results.append(f"🔴 Connector — {error}")
+
+        try:
+            status = check_openline()
+            results.append(
+                "🟢 Open Channel — READY "
+                f"(configured={status.get('CONFIGURED')}, status={status.get('STATUS')})"
+            )
+        except Exception as error:
+            results.append(f"🔴 Open Channel — {error}")
+
+        if CONNECTOR_TOKEN:
+            try:
+                send_openline_test()
+                results.append(
+                    "🟢 Incoming test — SENT. "
+                    "Bitrix должен создать тестовый диалог/CRM-сделку."
+                )
+            except Exception as error:
+                results.append(f"🔴 Incoming test — {error}")
+        else:
+            results.append(
+                "🟡 Incoming test — пропущен: нет STAFFFLOW_SEND_TOKEN"
+            )
+
+        text = "\n".join(results)
+        self.root.after(0, lambda: self.health_status.set(text))
 
     def create_next(self):
         if self.running:

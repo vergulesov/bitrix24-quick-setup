@@ -757,6 +757,27 @@ class App:
         except Exception as error:
             self.root.after(0, lambda: messagebox.showerror("Ошибка", repr(error)))
 
+    def create_pipeline_snapshot(self):
+        threading.Thread(target=self._create_pipeline_snapshot_worker, daemon=True).start()
+
+    def _create_pipeline_snapshot_worker(self):
+        try:
+            self.ensure_ready()
+            created = create_pipeline_snapshot(
+                self.pipeline_id,
+                self.user_id,
+                self.stages,
+                count=24,
+            )
+            self.root.after(
+                0,
+                lambda: self.status.set(
+                    f"Создан срез воронки: {created} сделок по рабочим стадиям"
+                ),
+            )
+        except Exception as error:
+            self.root.after(0, lambda: messagebox.showerror("Ошибка", repr(error)))
+
     def start_scenario(self):
         if self.running:
             return

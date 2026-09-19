@@ -130,7 +130,7 @@ def send_openline_test():
         "chat_name": "StaffFlow Health Check",
         "text": "StaffFlow health-check: входящее тестовое сообщение.",
     }
-    send_url = CONNECTOR_URL.rstrip("/").rsplit("/bitrix/app", 1)[0] + "/send"
+    send_url = CONNECTOR_URL.rstrip("/") + "/send"
     response = requests.post(
         send_url,
         json=payload,

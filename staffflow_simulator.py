@@ -135,7 +135,6 @@ class App:
         self.thread = None
         self.created = 0
         self.pipeline_id = None
-        self.pipeline_id = None
         self.stage_id = None
 
         frame = ttk.Frame(root, padding=20)
@@ -245,7 +244,7 @@ class App:
         while self.running:
             try:
                 self.ensure_stage()
-                create_candidate(self.stage_id)
+                create_candidate(self.pipeline_id, self.stage_id)
                 self.created += 1
 
                 self.root.after(
@@ -279,6 +278,7 @@ class App:
 
         try:
             self.pause()
+            self.ensure_stage()
             deleted = delete_demo(self.pipeline_id)
             self.status.set(f"Удалено демо-сделок: {deleted}")
         except Exception as error:

@@ -378,6 +378,55 @@ def create_sla_candidate(category_id, user_id, stages, index):
     return deal_id, stage_name, priority, deadline_delta, answered
 
 
+def create_pipeline_snapshot(category_id, user_id, stages, count=24):
+    """Создаёт плотный рабочий срез по стадиям без имитации входящих."""
+    candidates = WORKDAY_SCENARIO[6:]
+    created = 0
+    for i in range(min(count, len(candidates))):
+        scenario = candidates[i]
+        name = f"{scenario['name']} — Срез"
+        deadline = datetime.now() + timedelta(minutes=scenario["delta"])
+        fields = {
+            DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
+            DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: "Демо",
+            DEAL_FIELD_CODES["DESIRED_POSITION"]: scenario["vacancy"],
+            DEAL_FIELD_CODES["VACANCY"]: scenario["vacancy"],
+            DEAL_FIELD_CODES["PRIORITY"]: scenario["priority"],
+            DEAL_FIELD_CODES["BLOCKER"]: scenario["blocker"],
+            DEAL_FIELD_CODES["NEXT_STEP"]: scenario["next"],
+            DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
+        }
+        deal = call(
+            "crm.item.add",
+            {
+                "entityTypeId": 2,
+                "useOriginalUfNames": "Y",
+                "fields": {
+                    "title": name,
+                    "categoryId": category_id,
+                    "stageId": stages[scenario["stage"]],
+                    "assignedById": user_id,
+                    "comments": DEMO_COMMENT,
+                    **fields,
+                },
+            },
+        )
+        deal_id = int(deal["item"]["id"])
+        call(
+            "crm.timeline.comment.add",
+            {
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": f"[WORKDAY SNAPSHOT] {scenario['comment']}",
+                }
+            },
+        )
+        created += 1
+    return created
+
+
 def delete_demo_tasks():
     deleted = 0
     data = call(

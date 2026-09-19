@@ -328,7 +328,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 "entityTypeId": 2,
                 "id": deal_id,
                 "useOriginalUfNames": "Y",
-                "fields": fields,
+                "fields": {k: v for k, v in fields.items() if k != DEAL_FIELD_CODES["CANDIDATE_SOURCE"]},
             },
         )
 

@@ -13,61 +13,64 @@ CONTACT_TELEGRAM = "@vergelesn"
 CHAT_TITLE = "Никита — Открытая линия"
 
 
-def recent_openline_chat(client: BitrixClient) -> dict[str, Any]:
+def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
+    """
+    Находим чат через CRM-привязку, без im.recent.list.
+    Текущий тестовый контакт виден в UI как contact/3, а если
+    привязки к контакту нет — пробуем тестовую сделку 419.
+    """
+    # 1. Ищем контакт по телефону и проверяем связанные Open Line чаты.
+    contact = find_contact(client)
+    if contact:
+        contact_id = int(contact["ID"])
+        result = client.call(
+            "imopenlines.crm.chat.get",
+            {
+                "CRM_ENTITY_TYPE": "contact",
+                "CRM_ENTITY": contact_id,
+                "ACTIVE_ONLY": "N",
+            },
+        )
+        chats = result or []
+        if chats:
+            chat = chats[-1]
+            print(
+                f"Найден чат через контакт {contact_id}: "
+                f"CHAT_ID={chat.get('CHAT_ID')} | "
+                f"{chat.get('CONNECTOR_TITLE')}"
+            )
+            return {
+                "chat_id": int(chat["CHAT_ID"]),
+                "title": CHAT_TITLE,
+            }
+
+    # 2. На всякий случай проверяем тестовую сделку.
     result = client.call(
-        "im.recent.list",
+        "imopenlines.crm.chat.get",
         {
-            "SKIP_OPENLINES": "N",
-            "SKIP_DIALOG": "Y",
-            "SKIP_CHAT": "N",
-            "PARSE_TEXT": "Y",
-            "GET_ORIGINAL_TEXT": "Y",
-            "SKIP_UNDISTRIBUTED_OPENLINES": "N",
-            "ONLY_COPILOT": "N",
-            "ONLY_CHANNEL": "N",
-            "CAN_MANAGE_MESSAGES": "Y",
-            "OFFSET": 0,
-            "LIMIT": 200,
+            "CRM_ENTITY_TYPE": "deal",
+            "CRM_ENTITY": DEAL_ID,
+            "ACTIVE_ONLY": "N",
         },
     )
-    items = (result or {}).get("items", [])
-
-    exact = [
-        item for item in items
-        if item.get("type") == "chat"
-        and item.get("title") == CHAT_TITLE
-    ]
-    if exact:
-        return exact[0]
-
-    candidates = [
-        item for item in items
-        if item.get("type") == "chat"
-        and (
-            "Открытая линия" in str(item.get("title", ""))
-            or "StaffFlow" in str(item.get("title", ""))
-            or "Никита" in str(item.get("title", ""))
-        )
-    ]
-
-    if len(candidates) == 1:
-        return candidates[0]
-
-    if not candidates:
-        raise RuntimeError(
-            "Не найден текущий чат Open Line в im.recent.list. "
-            "Открой чат в Битрикс24 и отправь одно тестовое сообщение, затем повтори."
-        )
-
-    print("Найдены похожие чаты:")
-    for item in candidates:
+    chats = result or []
+    if chats:
+        chat = chats[-1]
         print(
-            f"  chat_id={item.get('chat_id')} | "
-            f"title={item.get('title')} | "
-            f"date={item.get('date_last_activity')}"
+            f"Найден чат через сделку {DEAL_ID}: "
+            f"CHAT_ID={chat.get('CHAT_ID')} | "
+            f"{chat.get('CONNECTOR_TITLE')}"
         )
-    raise RuntimeError("Слишком много похожих чатов — остановил восстановление без изменений.")
+        return {
+            "chat_id": int(chat["CHAT_ID"]),
+            "title": CHAT_TITLE,
+        }
 
+    raise RuntimeError(
+        "Open Line чат не найден через CRM-привязки. "
+        "im.recent.list больше не используется, поэтому нужен "
+        "другой способ получить CHAT_ID."
+    )
 
 def get_dialog(client: BitrixClient, chat_id: int) -> dict[str, Any]:
     return client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})
@@ -216,7 +219,7 @@ def try_rebind_session(client: BitrixClient, chat_id: int) -> None:
 
 
 def run(client: BitrixClient, deal_id: int = DEAL_ID, restore_history: bool = True) -> None:
-    chat = recent_openline_chat(client)
+    chat = find_openline_chat(client)
     chat_id = int(chat["chat_id"])
     print(f"Open Line chat: {chat.get('title')} | CHAT_ID={chat_id}")
 

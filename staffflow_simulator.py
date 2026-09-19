@@ -154,7 +154,7 @@ def send_openline_test():
     )
     response.raise_for_status()
     data = response.json()
-    if not isinstance(data, dict) || not data.get("ok"):
+    if not isinstance(data, dict) or not data.get("ok"):
         raise RuntimeError(f"Connector /send вернул ошибку: {data!r}")
     return data
 

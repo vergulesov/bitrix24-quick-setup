@@ -14,7 +14,7 @@ WEBHOOK = os.getenv("BITRIX_WEBHOOK_URL") or os.getenv("BITRIX_WEBHOOK")
 if not WEBHOOK:
     raise SystemExit("Не найден BITRIX_WEBHOOK_URL / BITRIX_WEBHOOK в .env")
 
-CATEGORY_ID = 1
+PIPELINE_NAME = "Подбор персонала"
 
 NAMES = [
     "Алексей Смирнов", "Марина Фёдорова", "Ирина Лебедева",
@@ -44,17 +44,29 @@ def call(method, params=None):
     return data.get("result")
 
 
-def get_new_stage():
-    result = call(
-        "crm.category.stage.list",
-        {"entityTypeId": 2, "categoryId": CATEGORY_ID},
+def get_pipeline():
+    result = call("crm.category.list", {"entityTypeId": 2})
+    categories = result.get("categories", []) if isinstance(result, dict) else []
+    for category in categories:
+        if category.get("name") == PIPELINE_NAME:
+            return int(category["id"])
+    raise RuntimeError(f"Не найдена воронка «{PIPELINE_NAME}».")
+
+
+def get_new_stage(category_id):
+    entity_id = f"DEAL_STAGE_{category_id}"
+    stages = call(
+        "crm.status.list",
+        {
+            "filter": {"ENTITY_ID": entity_id},
+            "order": {"SORT": "ASC"},
+        },
     )
-    stages = result.get("stages", result if isinstance(result, list) else [])
-    for stage in stages:
-        if stage.get("name") == "Новый кандидат":
-            return stage.get("statusId") or stage.get("id")
+    for stage in stages or []:
+        if stage.get("NAME") == "Новый кандидат":
+            return stage.get("STATUS_ID")
     raise RuntimeError(
-        "Не найдена стадия «Новый кандидат» в воронке «Подбор персонала»."
+        f"Не найдена стадия «Новый кандидат» в воронке «{PIPELINE_NAME}»."
     )
 
 
@@ -75,7 +87,7 @@ def create_candidate(stage_id):
     )
 
 
-def delete_demo():
+def delete_demo(category_id):
     total = 0
     start = 0
 
@@ -85,7 +97,7 @@ def delete_demo():
             {
                 "entityTypeId": 2,
                 "select": ["id", "title"],
-                "filter": {"categoryId": CATEGORY_ID},
+                "filter": {"categoryId": category_id},
                 "start": start,
             },
         )
@@ -122,6 +134,8 @@ class App:
         self.running = False
         self.thread = None
         self.created = 0
+        self.pipeline_id = None
+        self.pipeline_id = None
         self.stage_id = None
 
         frame = ttk.Frame(root, padding=20)
@@ -177,15 +191,17 @@ class App:
         ).pack(pady=5)
 
     def ensure_stage(self):
+        if self.pipeline_id is None:
+            self.pipeline_id = get_pipeline()
         if self.stage_id is None:
-            self.stage_id = get_new_stage()
+            self.stage_id = get_new_stage(self.pipeline_id)
 
     def create_now(self, count):
         def work():
             try:
                 self.ensure_stage()
                 for _ in range(count):
-                    create_candidate(self.stage_id)
+                    create_candidate(self.pipeline_id, self.stage_id)
                     self.created += 1
 
                 self.root.after(
@@ -263,7 +279,7 @@ class App:
 
         try:
             self.pause()
-            deleted = delete_demo()
+            deleted = delete_demo(self.pipeline_id)
             self.status.set(f"Удалено демо-сделок: {deleted}")
         except Exception as error:
             messagebox.showerror("Ошибка", str(error))

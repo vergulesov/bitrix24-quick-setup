@@ -260,6 +260,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
             {
                 "entityTypeId": 2,
                 "id": deal_id,
+                "useOriginalUfNames": "Y",
                 "fields": {
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),

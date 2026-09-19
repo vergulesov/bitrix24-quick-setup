@@ -273,6 +273,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
             {
                 "entityTypeId": 2,
                 "id": deal_id,
+                "useOriginalUfNames": "Y",
             },
         )
         saved = check.get("item", {}).get(DEAL_FIELD_CODES["RESPONSE_DEADLINE"])
@@ -284,6 +285,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
             {
                 "entityTypeId": 2,
                 "id": deal_id,
+                "useOriginalUfNames": "Y",
                 "fields": {"stageId": stage_id},
             },
         )
@@ -293,6 +295,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
             {
                 "entityTypeId": 2,
                 "id": deal_id,
+                "useOriginalUfNames": "Y",
                 "fields": fields,
             },
         )

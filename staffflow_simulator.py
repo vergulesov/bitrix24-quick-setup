@@ -189,6 +189,53 @@ def stage_map(category_id):
     }
 
 
+def send_workday_incoming(name, vacancy, index):
+    """Создаёт настоящее входящее сообщение через Open Channel."""
+    if not CONNECTOR_TOKEN:
+        raise RuntimeError("Для входящего демо не задан STAFFFLOW_SEND_TOKEN в .env.")
+
+    stamp = int(time.time() * 1000)
+    payload = {
+        "token": CONNECTOR_TOKEN,
+        "user_id": f"workday-demo-{index + 1}-{stamp}",
+        "user_name": name,
+        "message_id": f"workday-msg-{index + 1}-{stamp}",
+        "chat_id": f"workday-chat-{index + 1}-{stamp}",
+        "chat_name": f"{name} — {vacancy}",
+        "text": f"Здравствуйте! Интересует вакансия «{vacancy}». Подскажите, пожалуйста, условия и график.",
+    }
+    response = requests.post(
+        CONNECTOR_URL.rstrip("/") + "/send",
+        json=payload,
+        timeout=20,
+    )
+    response.raise_for_status()
+    data = response.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"Connector /send вернул ошибку: {data}")
+    return data
+
+
+def find_recent_deal(category_id, name, timeout=15):
+    """Ждём сделку, которую Open Channel создаёт автоматически."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        data = call(
+            "crm.item.list",
+            {
+                "entityTypeId": 2,
+                "select": ["id", "title", "categoryId", "stageId", "contactIds", "createdTime"],
+                "filter": {"categoryId": category_id},
+                "order": {"id": "DESC"},
+            },
+        )
+        for item in (data or {}).get("items", []):
+            if str(item.get("title", "")).startswith(name):
+                return item
+        time.sleep(1)
+    raise RuntimeError(f"Open Channel отправил сообщение, но CRM-сделка для «{name}» не появилась.")
+
+
 def create_sla_candidate(category_id, user_id, stages, index):
     scenario = WORKDAY_SCENARIO[index]
     name = scenario["name"]
@@ -208,32 +255,6 @@ def create_sla_candidate(category_id, user_id, stages, index):
 
     stage_name = scenario_stage
     stage_id = stages[stage_name]
-
-    contact = call(
-        "crm.item.add",
-        {
-            "entityTypeId": 3,
-            "fields": {
-                "name": name,
-                "lastName": "Демо",
-                "fm": [
-                    {
-                        "typeId": "PHONE",
-                        "valueType": "WORK",
-                        "value": f"+7900{1000000 + index * 731}",
-                    },
-                    {
-                        "typeId": "EMAIL",
-                        "valueType": "WORK",
-                        "value": f"sla{index + 1}@staffflow.test",
-                    },
-                ],
-                "assignedById": user_id,
-                "comments": "[DEMO] SLA simulator contact",
-            },
-        },
-    )
-    contact_id = int(contact["item"]["id"])
 
     fields = {
         DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
@@ -256,27 +277,53 @@ def create_sla_candidate(category_id, user_id, stages, index):
     # Так демо-SLA записывается ДО входа в стадию, где срабатывает робот.
     create_stage_id = stages["Квалификация"] if stage_name == "Новый кандидат" else stage_id
 
-    deal = call(
-        "crm.item.add",
-        {
-            "entityTypeId": 2,
-            "useOriginalUfNames": "Y",
-            "fields": {
-                "title": f"{name} — {vacancy}",
-                "categoryId": category_id,
-                "stageId": create_stage_id,
-                "assignedById": user_id,
-                "contactIds": [contact_id],
-                "comments": DEMO_COMMENT,
-                # Источник — реальное значение перечисления Bitrix. Демо помечаем комментарием.
-                DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Другое",
-                **{k: v for k, v in fields.items() if k != DEAL_FIELD_CODES["CANDIDATE_SOURCE"] and k != DEAL_FIELD_CODES["RESPONSE_DEADLINE"]},
-            },
-        },
-    )
-    deal_id = int(deal["item"]["id"])
-
     if stage_name == "Новый кандидат":
+        # Для входящего кандидата не рисуем сделку через REST:
+        # сообщение реально проходит Telegram → Connector → Open Channel → CRM.
+        send_workday_incoming(name, vacancy, index)
+        recent = find_recent_deal(category_id, name)
+        deal_id = int(recent["id"])
+
+        # Open Channel уже создал сделку и запустил штатные роботы.
+        # После этого накладываем демо-состояние рабочего дня поверх реального входящего.
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": {
+                    "comments": DEMO_COMMENT,
+                    DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
+                    DEAL_FIELD_CODES["DESIRED_POSITION"]: vacancy,
+                    DEAL_FIELD_CODES["VACANCY"]: vacancy,
+                    DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["PRIORITY"]: priority,
+                    DEAL_FIELD_CODES["BLOCKER"]: blocker,
+                    DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
+                },
+            },
+        )
+    else:
+        deal = call(
+            "crm.item.add",
+            {
+                "entityTypeId": 2,
+                "useOriginalUfNames": "Y",
+                "fields": {
+                    "title": f"{name} — {vacancy}",
+                    "categoryId": category_id,
+                    "stageId": create_stage_id,
+                    "assignedById": user_id,
+                    "comments": DEMO_COMMENT,
+                    **{k: v for k, v in fields.items() if k != DEAL_FIELD_CODES["CANDIDATE_SOURCE"] and k != DEAL_FIELD_CODES["RESPONSE_DEADLINE"]},
+                },
+            },
+        )
+        deal_id = int(deal["item"]["id"])
+
         # Сначала записываем демо-SLA в безопасной стадии, затем переводим в «Новый кандидат».
         call(
             "crm.item.update",

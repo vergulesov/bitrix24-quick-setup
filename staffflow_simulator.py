@@ -575,12 +575,13 @@ class App:
             command=self.create_next,
         ).pack(side="left", padx=5)
 
-        ttk.Button(
-            row,
-            text="СОЗДАТЬ СРЕЗ ВОРОНКИ",
-            command=self.create_pipeline_snapshot,
-        ).pack(side="left", padx=5)
+        ttk.Separator(frame).pack(fill="x", pady=8)
 
+        ttk.Button(
+            frame,
+            text="СОЗДАТЬ СРЕЗ ВОРОНКИ (24 сделки)",
+            command=self.create_pipeline_snapshot,
+        ).pack(anchor="w", pady=5)
         ttk.Separator(frame).pack(fill="x", pady=14)
 
         ttk.Label(

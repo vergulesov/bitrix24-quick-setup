@@ -465,6 +465,29 @@ class App:
 
         ttk.Button(
             row,
+            text="↻ СБРОСИТЬ СЦЕНАРИЙ",
+            command=self.reset_scenario,
+        ).pack(side="left", padx=5)
+
+        ttk.Separator(frame).pack(fill="x", pady=10)
+
+        ttk.Label(
+            frame,
+            text="Контроль стенда",
+            font=("Segoe UI", 12, "bold"),
+        ).pack(anchor="w")
+
+        row = ttk.Frame(frame)
+        row.pack(pady=10)
+
+        ttk.Button(
+            row,
+            text="🗑 УДАЛИТЬ SLA-ДЕМО",
+            command=self.delete_demo,
+        ).pack(side="left", padx=5)
+
+        ttk.Button(
+            row,
             text="СБРОСИТЬ СЦЕНАРИЙ",
             command=self.reset_scenario,
         ).pack(side="left", padx=5)

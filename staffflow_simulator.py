@@ -154,8 +154,8 @@ def send_openline_test():
     )
     response.raise_for_status()
     data = response.json()
-    if not data.get("ok"):
-        raise RuntimeError(f"Connector /send вернул ошибку: {data}")
+    if not isinstance(data, dict) || not data.get("ok"):
+        raise RuntimeError(f"Connector /send вернул ошибку: {data!r}")
     return data
 
 
@@ -229,9 +229,9 @@ def find_recent_deal(category_id, name, timeout=15):
                 "order": {"id": "DESC"},
             },
         )
-        for item in (data or {}).get("items", []):
-            if str(item.get("title", "")).startswith(name):
-                return item
+        items = (data or {}).get("items", [])
+        if items:
+            return items[0]
         time.sleep(1)
     raise RuntimeError(f"Open Channel отправил сообщение, но CRM-сделка для «{name}» не появилась.")
 
@@ -700,7 +700,7 @@ class App:
                 ),
             )
         except Exception as error:
-            self.root.after(0, lambda: messagebox.showerror("Ошибка", str(error)))
+            self.root.after(0, lambda: messagebox.showerror("Ошибка", repr(error)))
 
     def start_scenario(self):
         if self.running:

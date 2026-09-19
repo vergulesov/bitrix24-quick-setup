@@ -23,6 +23,8 @@ def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
     contact = find_contact(client)
     if contact:
         contact_id = int(contact["ID"])
+        print(f"Contact {contact_id} raw IM: {contact.get('IM')}")
+        print(f"Contact {contact_id} raw data: {contact}")
         result = client.call(
             "imopenlines.crm.chat.get",
             {

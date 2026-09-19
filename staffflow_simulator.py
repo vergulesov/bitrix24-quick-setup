@@ -78,7 +78,7 @@ def get_current_user_id():
     return int(user["ID"])
 
 
-def create_candidate(category_id, stage_id, responsible_id, stage_path):
+def create_candidate(category_id, final_stage_id, responsible_id, stage_path):
     name = random.choice(NAMES)
     position = random.choice(POSITIONS)
 
@@ -116,7 +116,7 @@ def create_candidate(category_id, stage_id, responsible_id, stage_path):
             "fields": {
                 "title": title,
                 "categoryId": category_id,
-                "stageId": stage_id,
+                "stageId": stage_path[0],
                 "assignedById": responsible_id,
                 "contactIds": [contact_id],
             },
@@ -125,9 +125,7 @@ def create_candidate(category_id, stage_id, responsible_id, stage_path):
     deal_id = int(deal["item"]["id"])
 
     # Прогоняем сделку по предыдущим этапам, чтобы в CRM был виден путь.
-    for target_stage_id in stage_path:
-        if target_stage_id == stage_id:
-            continue
+    for target_stage_id in stage_path[1:]:
         call(
             "crm.item.update",
             {
@@ -139,7 +137,7 @@ def create_candidate(category_id, stage_id, responsible_id, stage_path):
         time.sleep(0.15)
 
     # Входящее оставляем только у текущего кандидата на финальном этапе пути.
-    if stage_path and stage_path[-1] == stage_id:
+    if stage_path and stage_path[-1] == stage_path[0]:
         add_incoming_activity(
             deal_id=deal_id,
             contact_id=contact_id,
@@ -401,10 +399,14 @@ class App:
         while self.running:
             try:
                 self.ensure_stage()
+                current_index = random.randrange(len(self.stage_ids))
+                current_stage = self.stage_ids[current_index]
+                path = self.stage_ids[: current_index + 1]
                 create_candidate(
                     self.pipeline_id,
-                    self.stage_id,
+                    current_stage,
                     self.responsible_id,
+                    path,
                 )
                 self.created += 1
 

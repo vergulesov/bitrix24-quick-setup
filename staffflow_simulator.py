@@ -58,6 +58,16 @@ WORK_STAGES = [
     "Выход на работу",
 ]
 
+# Расширенный демонстрационный набор: всего 50 кандидатов.
+_EXTRA_NAMES = ["Денис","Кирилл","Михаил","Илья","Николай","Павел","Владислав","Глеб","Егор","Степан","Тимур","Вадим","Руслан","Константин","Фёдор","Арсений","Матвей","Богдан","Леонид","Станислав","Виталий","Игорь","Олег","Антон","Даниил","Иван","Семён","Ярослав","Марк","Данил","Вячеслав","Георгий","Назар","Евгений","Марат","Артур","Валерий","Григорий","Святослав","Лев","Родион","Пётр","Мирон","Виктор"]
+_EXTRA_VACANCIES = ["Водитель","Кладовщик","Курьер","Оператор","Комплектовщик","Менеджер по продажам","Администратор"]
+_EXTRA_PRIORITIES = ["Высокий","Средний","Низкий"]
+SLA_SCENARIO.extend(
+    (name, _EXTRA_VACANCIES[i % len(_EXTRA_VACANCIES)], _EXTRA_PRIORITIES[i % len(_EXTRA_PRIORITIES)], 30 + i * 15, True)
+    for i, name in enumerate(_EXTRA_NAMES)
+)
+
+
 
 def call(method, params=None):
     response = requests.post(
@@ -612,7 +622,7 @@ class App:
         try:
             self.ensure_ready()
             if self.scenario_index >= len(SLA_SCENARIO):
-                self.root.after(0, lambda: self.status.set("Сценарий завершён: 18 / 18"))
+                self.root.after(0, lambda: self.status.set("Сценарий завершён: 50 / 50"))
                 return
 
             result = create_sla_candidate(
@@ -687,7 +697,7 @@ class App:
         self.pause()
         self.scenario_index = 0
         self.created = 0
-        self.status.set("Сценарий сброшен: 0 / 18")
+        self.status.set("Сценарий сброшен: 0 / 50")
 
     def delete_demo(self):
         if not messagebox.askyesno(

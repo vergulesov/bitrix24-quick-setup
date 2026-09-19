@@ -351,7 +351,7 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title("StaffFlow — SLA Simulator")
-        root.geometry("560x500")
+        root.geometry("560x650")
         root.resizable(False, False)
 
         self.running = False
@@ -459,7 +459,7 @@ class App:
 
         ttk.Button(
             row,
-            text="🗑 УДАЛИТЬ SLA-ДЕМО",
+            text="🗑 УДАЛИТЬ ДЕМО-СЦЕНАРИЙ",
             command=self.delete_demo,
         ).pack(side="left", padx=5)
 

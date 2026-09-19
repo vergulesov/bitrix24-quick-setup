@@ -86,17 +86,17 @@ def create_candidate(category_id, stage_id, responsible_id):
             "fields": {
                 "name": name.split()[0],
                 "lastName": name.split()[-1],
-                "phone": [
+                "fm": [
                     {
-                        "VALUE": f"+7900{random.randint(1000000, 9999999)}",
-                        "VALUE_TYPE": "WORK",
-                    }
-                ],
-                "email": [
+                        "typeId": "PHONE",
+                        "valueType": "WORK",
+                        "value": f"+7900{random.randint(1000000, 9999999)}",
+                    },
                     {
-                        "VALUE": f"demo{random.randint(100000000, 999999999)}@staffflow.test",
-                        "VALUE_TYPE": "WORK",
-                    }
+                        "typeId": "EMAIL",
+                        "valueType": "WORK",
+                        "value": f"demo{random.randint(100000000, 999999999)}@staffflow.test",
+                    },
                 ],
                 "assignedById": responsible_id,
                 "comments": "[DEMO] Контакт создан симулятором.",
@@ -210,7 +210,7 @@ def delete_demo(category_id):
             {
                 "entityTypeId": 3,
                 "select": ["id", "name", "lastName", "comments"],
-                "filter": {"%comments": "[DEMO]"},
+                "filter": {},
                 "start": start,
             },
         )

@@ -19,7 +19,7 @@ if not WEBHOOK:
 
 PIPELINE_NAME = "Подбор персонала"
 DEMO_COMMENT = "SLA DEMO DATA"
-CONNECTOR_URL = os.getenv("STAFFFLOW_CONNECTOR_URL", "https://195-19-195-13.sslip.io")
+CONNECTOR_URL = os.getenv("STAFFFLOW_CONNECTOR_URL", "https://195-19-195-13.sslip.io/bitrix/app")
 CONNECTOR_TOKEN = os.getenv("STAFFFLOW_SEND_TOKEN", "")
 CONNECTOR_ID = "staffflow_test"
 OPEN_LINE_ID = 1
@@ -104,22 +104,20 @@ def check_connector():
 
 
 def check_openline():
-    result = call(
-        "imconnector.status",
-        {"CONNECTOR": CONNECTOR_ID, "LINE": OPEN_LINE_ID},
-    )
-    if not result:
-        raise RuntimeError("Bitrix не вернул статус Open Channel.")
-    if not result.get("CONFIGURED") or not result.get("STATUS"):
-        raise RuntimeError(f"Open Channel не готов: {result}")
-    return result
+    # imconnector.status is an application-context method and cannot be
+    # checked through the personal webhook used by this simulator.
+    return {
+        "CONFIGURED": None,
+        "STATUS": None,
+        "NOTE": "Проверка фактической доставки выполняется через /send + CRM."
+    }
 
 
 def send_openline_test():
     if not CONNECTOR_TOKEN:
         raise RuntimeError(
             "Не задан STAFFFLOW_SEND_TOKEN в .env. "
-            "Health-check без него проверяет только доступность connector/Open Channel."
+            "Добавь локально токен /send с VPS; в чат его не присылай."
         )
 
     stamp = int(time.time())
@@ -132,8 +130,9 @@ def send_openline_test():
         "chat_name": "StaffFlow Health Check",
         "text": "StaffFlow health-check: входящее тестовое сообщение.",
     }
+    send_url = CONNECTOR_URL.rstrip("/").rsplit("/bitrix/app", 1)[0] + "/send"
     response = requests.post(
-        CONNECTOR_URL.rstrip("/") + "/send",
+        send_url,
         json=payload,
         timeout=20,
     )
@@ -142,6 +141,28 @@ def send_openline_test():
     if not data.get("ok"):
         raise RuntimeError(f"Connector /send вернул ошибку: {data}")
     return data
+
+
+def count_pipeline_deals(category_id):
+    data = call(
+        "crm.item.list",
+        {
+            "entityTypeId": 2,
+            "select": ["id", "title"],
+            "filter": {"categoryId": category_id},
+        },
+    )
+    return len(data.get("items", []))
+
+
+def wait_for_new_pipeline_deal(category_id, before_count, timeout=12):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        count = count_pipeline_deals(category_id)
+        if count > before_count:
+            return count
+        time.sleep(1)
+    return count_pipeline_deals(category_id)
 
 
 def stage_map(category_id):
@@ -251,6 +272,46 @@ def create_sla_candidate(category_id, user_id, stages, index):
     )
 
     return deal_id, stage_name, priority, deadline_delta, answered
+
+
+def delete_demo_tasks():
+    deleted = 0
+    data = call(
+        "tasks.task.list",
+        {
+            "select": ["id", "title", "status"],
+            "filter": {},
+        },
+    )
+    tasks = (data or {}).get("tasks", [])
+    for task in tasks:
+        if task.get("title") == "Ответить кандидату":
+            call("tasks.task.delete", {"taskId": int(task["id"])})
+            deleted += 1
+    return deleted
+
+
+def delete_demo_contacts():
+    deleted = 0
+    while True:
+        data = call(
+            "crm.item.list",
+            {
+                "entityTypeId": 3,
+                "select": ["id", "name", "lastName", "comments"],
+                "filter": {"comments": "[DEMO] SLA simulator contact"},
+            },
+        )
+        items = data.get("items", [])
+        if not items:
+            break
+        for item in items:
+            call(
+                "crm.item.delete",
+                {"entityTypeId": 3, "id": item["id"]},
+            )
+            deleted += 1
+    return deleted
 
 
 def delete_demo(category_id):
@@ -458,31 +519,39 @@ class App:
 
         try:
             check_connector()
-            results.append("🟢 Connector — OK")
+            results.append("🟢 Connector /bitrix/app — OK")
         except Exception as error:
-            results.append(f"🔴 Connector — {error}")
+            results.append(f"🔴 Connector /bitrix/app — {error}")
 
-        try:
-            status = check_openline()
-            results.append(
-                "🟢 Open Channel — READY "
-                f"(configured={status.get('CONFIGURED')}, status={status.get('STATUS')})"
-            )
-        except Exception as error:
-            results.append(f"🔴 Open Channel — {error}")
+        results.append(
+            "🟡 Open Channel API status — проверяется не webhook'ом; "
+            "реальная проверка ниже."
+        )
 
         if CONNECTOR_TOKEN:
             try:
+                before = count_pipeline_deals(self.pipeline_id)
                 send_openline_test()
-                results.append(
-                    "🟢 Incoming test — SENT. "
-                    "Bitrix должен создать тестовый диалог/CRM-сделку."
+                after = wait_for_new_pipeline_deal(
+                    self.pipeline_id,
+                    before,
+                    timeout=12,
                 )
+                if after > before:
+                    results.append(
+                        f"🟢 Incoming → Open Channel → CRM — OK "
+                        f"(сделок было {before}, стало {after})"
+                    )
+                else:
+                    results.append(
+                        "🔴 Incoming → CRM — сообщение отправлено connector'ом, "
+                        "но новая CRM-сделка за 12 сек не появилась."
+                    )
             except Exception as error:
                 results.append(f"🔴 Incoming test — {error}")
         else:
             results.append(
-                "🟡 Incoming test — пропущен: нет STAFFFLOW_SEND_TOKEN"
+                "🟡 Incoming test — не запущен: нет STAFFFLOW_SEND_TOKEN в .env"
             )
 
         text = "\n".join(results)
@@ -585,9 +654,14 @@ class App:
             self.pause()
             self.ensure_ready()
             deleted = delete_demo(self.pipeline_id)
+            deleted_contacts = delete_demo_contacts()
+            deleted_tasks = delete_demo_tasks()
             self.scenario_index = 0
             self.created = 0
-            self.status.set(f"Удалено SLA-демо: {deleted}. Готово к новому запуску.")
+            self.status.set(
+                f"Удалено: сделки {deleted}, контакты {deleted_contacts}, "
+                f"задачи «Ответить кандидату» {deleted_tasks}. Готово к новому запуску."
+            )
         except Exception as error:
             messagebox.showerror("Ошибка", str(error))
 

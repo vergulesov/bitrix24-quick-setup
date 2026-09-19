@@ -70,11 +70,43 @@ def get_new_stage(category_id):
     )
 
 
-def create_candidate(category_id, stage_id):
+def get_current_user_id():
+    user = call("user.current")
+    return int(user["ID"])
+
+
+def create_candidate(category_id, stage_id, responsible_id):
     name = random.choice(NAMES)
     position = random.choice(POSITIONS)
+
+    contact = call(
+        "crm.item.add",
+        {
+            "entityTypeId": 3,
+            "fields": {
+                "name": name.split()[0],
+                "lastName": name.split()[-1],
+                "phone": [
+                    {
+                        "VALUE": f"+7900{random.randint(1000000, 9999999)}",
+                        "VALUE_TYPE": "WORK",
+                    }
+                ],
+                "email": [
+                    {
+                        "VALUE": f"demo{random.randint(100000000, 999999999)}@staffflow.test",
+                        "VALUE_TYPE": "WORK",
+                    }
+                ],
+                "assignedById": responsible_id,
+                "comments": "[DEMO] Контакт создан симулятором.",
+            },
+        },
+    )
+    contact_id = int(contact["item"]["id"])
+
     title = f"[DEMO] {name} — {position}"
-    return call(
+    deal = call(
         "crm.item.add",
         {
             "entityTypeId": 2,
@@ -82,7 +114,56 @@ def create_candidate(category_id, stage_id):
                 "title": title,
                 "categoryId": category_id,
                 "stageId": stage_id,
+                "assignedById": responsible_id,
+                "contactIds": [contact_id],
             },
+        },
+    )
+    deal_id = int(deal["item"]["id"])
+
+    add_incoming_activity(
+        deal_id=deal_id,
+        contact_id=contact_id,
+        responsible_id=responsible_id,
+    )
+
+    return deal_id, contact_id
+
+
+def add_incoming_activity(deal_id, contact_id, responsible_id):
+    """
+    Создаёт незавершённое входящее CRM-дело.
+    Это имитация входящего события для очереди CRM:
+    оно должно попадать во «Входящие»/Activities view.
+
+    Важно: это не настоящий чат Open Channel и не создаёт сообщение
+    в Telegram/WhatsApp. Реальный E2E-канал остаётся отдельным тестом.
+    """
+    call(
+        "crm.activity.add",
+        {
+            "fields": {
+                "OWNER_ID": deal_id,
+                "OWNER_TYPE_ID": 2,
+                "TYPE_ID": 6,
+                "PROVIDER_ID": "CRM_EXTERNAL_CHANNEL",
+                "PROVIDER_TYPE_ID": "ACTIVITY",
+                "COMMUNICATIONS": [
+                    {
+                        "VALUE": f"demo-{contact_id}@staffflow.test",
+                        "ENTITY_ID": contact_id,
+                        "ENTITY_TYPE_ID": 3,
+                    }
+                ],
+                "SUBJECT": "Входящее сообщение — [DEMO]",
+                "DESCRIPTION": "Кандидат написал. Требуется ответ.",
+                "DESCRIPTION_TYPE": 1,
+                "COMPLETED": "N",
+                "RESPONSIBLE_ID": responsible_id,
+                "DIRECTION": 1,
+                "IS_INCOMING_CHANNEL": "Y",
+                "START_TIME": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
         },
     )
 
@@ -121,6 +202,36 @@ def delete_demo(category_id):
             break
         start = data["next"]
 
+    # Удаляем связанные демо-контакты отдельно, чтобы не оставлять мусор.
+    start = 0
+    while True:
+        data = call(
+            "crm.item.list",
+            {
+                "entityTypeId": 3,
+                "select": ["id", "name", "lastName", "comments"],
+                "filter": {"%comments": "[DEMO]"},
+                "start": start,
+            },
+        )
+        items = data.get("items", [])
+        if not items:
+            break
+
+        for item in items:
+            if "[DEMO]" in str(item.get("comments", "")):
+                call(
+                    "crm.item.delete",
+                    {
+                        "entityTypeId": 3,
+                        "id": item["id"],
+                    },
+                )
+
+        if not data.get("next"):
+            break
+        start = data["next"]
+
     return total
 
 
@@ -136,6 +247,7 @@ class App:
         self.created = 0
         self.pipeline_id = None
         self.stage_id = None
+        self.responsible_id = None
 
         frame = ttk.Frame(root, padding=20)
         frame.pack(fill="both", expand=True)
@@ -194,13 +306,19 @@ class App:
             self.pipeline_id = get_pipeline()
         if self.stage_id is None:
             self.stage_id = get_new_stage(self.pipeline_id)
+        if self.responsible_id is None:
+            self.responsible_id = get_current_user_id()
 
     def create_now(self, count):
         def work():
             try:
                 self.ensure_stage()
                 for _ in range(count):
-                    create_candidate(self.pipeline_id, self.stage_id)
+                    create_candidate(
+                        self.pipeline_id,
+                        self.stage_id,
+                        self.responsible_id,
+                    )
                     self.created += 1
 
                 self.root.after(
@@ -244,7 +362,11 @@ class App:
         while self.running:
             try:
                 self.ensure_stage()
-                create_candidate(self.pipeline_id, self.stage_id)
+                create_candidate(
+                    self.pipeline_id,
+                    self.stage_id,
+                    self.responsible_id,
+                )
                 self.created += 1
 
                 self.root.after(

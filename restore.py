@@ -64,6 +64,36 @@ def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
                 "title": CHAT_TITLE,
             }
 
+    # Документированный способ получить CHAT_ID из списка текущих
+    # Open Channel диалогов пользователя.
+    recent = client.call(
+        "im.recent.get",
+        {
+            "ONLY_OPENLINES": "Y",
+        },
+    ) or []
+
+    print(f"Open Line chats in recent list: {len(recent)}")
+
+    for item in recent:
+        chat = item.get("chat") or {}
+        chat_id = item.get("chat_id") or chat.get("id")
+        title = item.get("title") or chat.get("title")
+        message = (item.get("message") or {}).get("text", "")
+
+        print(
+            f"Open Line recent: CHAT_ID={chat_id} | "
+            f"title={title!r} | message={message!r} | "
+            f"entity_type={chat.get('entity_type')} | "
+            f"entity_id={chat.get('entity_id')}"
+        )
+
+        if chat_id:
+            return {
+                "chat_id": int(chat_id),
+                "title": str(title or CHAT_TITLE),
+            }
+
     # Если прямые проверки не нашли привязку, выходим с точным результатом.
     # Не полагаемся на полнотекстовый фильтр по title: его поведение
     # зависит от версии CRM REST.

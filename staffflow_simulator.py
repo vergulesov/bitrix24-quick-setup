@@ -53,16 +53,19 @@ def get_pipeline():
     raise RuntimeError(f"Не найдена воронка «{PIPELINE_NAME}».")
 
 
-def get_new_stage(category_id):
+def get_stages(category_id):
     entity_id = f"DEAL_STAGE_{category_id}"
-    stages = call(
+    return call(
         "crm.status.list",
         {
             "filter": {"ENTITY_ID": entity_id},
             "order": {"SORT": "ASC"},
         },
-    )
-    for stage in stages or []:
+    ) or []
+
+
+def get_new_stage(category_id):
+    for stage in get_stages(category_id):
         if stage.get("NAME") == "Новый кандидат":
             return stage.get("STATUS_ID")
     raise RuntimeError(
@@ -75,7 +78,7 @@ def get_current_user_id():
     return int(user["ID"])
 
 
-def create_candidate(category_id, stage_id, responsible_id):
+def create_candidate(category_id, stage_id, responsible_id, stage_path):
     name = random.choice(NAMES)
     position = random.choice(POSITIONS)
 
@@ -121,11 +124,27 @@ def create_candidate(category_id, stage_id, responsible_id):
     )
     deal_id = int(deal["item"]["id"])
 
-    add_incoming_activity(
-        deal_id=deal_id,
-        contact_id=contact_id,
-        responsible_id=responsible_id,
-    )
+    # Прогоняем сделку по предыдущим этапам, чтобы в CRM был виден путь.
+    for target_stage_id in stage_path:
+        if target_stage_id == stage_id:
+            continue
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "fields": {"stageId": target_stage_id},
+            },
+        )
+        time.sleep(0.15)
+
+    # Входящее оставляем только у текущего кандидата на финальном этапе пути.
+    if stage_path and stage_path[-1] == stage_id:
+        add_incoming_activity(
+            deal_id=deal_id,
+            contact_id=contact_id,
+            responsible_id=responsible_id,
+        )
 
     return deal_id, contact_id
 
@@ -248,6 +267,7 @@ class App:
         self.pipeline_id = None
         self.stage_id = None
         self.responsible_id = None
+        self.stage_ids = []
 
         frame = ttk.Frame(root, padding=20)
         frame.pack(fill="both", expand=True)
@@ -308,16 +328,35 @@ class App:
             self.stage_id = get_new_stage(self.pipeline_id)
         if self.responsible_id is None:
             self.responsible_id = get_current_user_id()
+        if not self.stage_ids:
+            self.stage_ids = [
+                s.get("STATUS_ID")
+                for s in get_stages(self.pipeline_id)
+                if s.get("NAME") in {
+                    "Новый кандидат",
+                    "Квалификация",
+                    "Интервью",
+                    "Ожидаем решение",
+                    "Документы",
+                    "Передан заказчику",
+                    "Выход на работу",
+                    "Отказ",
+                }
+            ]
 
     def create_now(self, count):
         def work():
             try:
                 self.ensure_stage()
                 for _ in range(count):
+                    current_index = random.randrange(len(self.stage_ids))
+                    current_stage = self.stage_ids[current_index]
+                    path = self.stage_ids[: current_index + 1]
                     create_candidate(
                         self.pipeline_id,
-                        self.stage_id,
+                        current_stage,
                         self.responsible_id,
+                        path,
                     )
                     self.created += 1
 

@@ -8,6 +8,7 @@ from demo import clear as clear_demo
 from demo import run as run_demo
 from setup import ensure_pipeline, setup
 from restore import run as restore_test
+from sla_demo import run as run_sla_demo
 
 
 def make_client() -> BitrixClient:
@@ -59,6 +60,13 @@ def cleanup_old_test() -> None:
     except Exception as exc:
         print(f"Contact 3: {exc}")
 
+def sla_demo() -> None:
+    client = make_client()
+    me = client.get_current_user()
+    pipeline_id = ensure_pipeline(client, "Подбор персонала")
+    run_sla_demo(client, pipeline_id, int(me["ID"]))
+
+
 def inspect() -> None:
     client = make_client()
     categories = client.list_categories()
@@ -78,7 +86,7 @@ def inspect() -> None:
             )
 
 def usage() -> None:
-    print("Usage: python main.py [check|setup|demo|demo-new N|demo-clear|restore-test|cleanup-old-test|inspect]")
+    print("Usage: python main.py [check|setup|demo|demo-new N|demo-clear|sla-demo|restore-test|cleanup-old-test|inspect]")
 
 
 if __name__ == "__main__":
@@ -93,6 +101,8 @@ if __name__ == "__main__":
     elif command == "demo-new":
         count = int(sys.argv[2]) if len(sys.argv) > 2 else 30
         demo(count=count)
+    elif command == "sla-demo":
+        sla_demo()
     elif command == "demo-clear":
         clear()
     elif command == "restore-test":

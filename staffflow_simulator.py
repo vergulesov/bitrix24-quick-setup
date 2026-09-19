@@ -237,6 +237,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
         "crm.item.add",
         {
             "entityTypeId": 2,
+            "useOriginalUfNames": "Y",
             "fields": {
                 "title": f"{name} — {vacancy}",
                 "categoryId": category_id,

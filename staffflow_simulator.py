@@ -24,29 +24,44 @@ CONNECTOR_TOKEN = os.getenv("STAFFFLOW_SEND_TOKEN", "")
 CONNECTOR_ID = "staffflow_test"
 OPEN_LINE_ID = 1
 
-SLA_SCENARIO = [
-    # name, vacancy, priority, minutes_to_deadline, answered
-    ("Алексей", "Водитель", "Высокий", -95, False),
-    ("Марина", "Кладовщик", "Высокий", -35, False),
-    ("Дмитрий", "Курьер", "Средний", 25, False),
-    ("Ольга", "Оператор", "Высокий", 70, False),
-    ("Сергей", "Комплектовщик", "Низкий", 115, False),
-    ("Ирина", "Менеджер по продажам", "Средний", 180, True),
+WORKDAY_SCENARIO = [
+    {"name":"Алексей","vacancy":"Водитель","priority":"Высокий","stage":"Новый кандидат","delta":-90,"answered":False,"next":"Ответить кандидату","blocker":"Нет ответа кандидату","comment":"Новый входящий. SLA уже просрочен."},
+    {"name":"Марина","vacancy":"Кладовщик","priority":"Высокий","stage":"Новый кандидат","delta":-40,"answered":False,"next":"Ответить кандидату","blocker":"Нет ответа кандидату","comment":"Новый входящий. SLA уже просрочен."},
+    {"name":"Дмитрий","vacancy":"Курьер","priority":"Высокий","stage":"Новый кандидат","delta":-15,"answered":False,"next":"Ответить кандидату","blocker":"Нет ответа кандидату","comment":"Новый входящий. SLA почти на границе."},
+    {"name":"Ольга","vacancy":"Оператор","priority":"Высокий","stage":"Новый кандидат","delta":15,"answered":False,"next":"Ответить кандидату","blocker":"Нет ответа кандидату","comment":"Новый входящий. До SLA 15 минут."},
+    {"name":"Сергей","vacancy":"Комплектовщик","priority":"Средний","stage":"Новый кандидат","delta":30,"answered":False,"next":"Ответить кандидату","blocker":"Нет ответа кандидату","comment":"Новый входящий. До SLA 30 минут."},
+    {"name":"Ирина","vacancy":"Менеджер по продажам","priority":"Средний","stage":"Новый кандидат","delta":60,"answered":False,"next":"Ответить кандидату","blocker":"Нет ответа кандидату","comment":"Новый входящий. До SLA 1 часа."},
 
-    ("Артём", "Водитель", "Высокий", 45, True),
-    ("Елена", "Курьер", "Средний", 120, True),
-    ("Пётр", "Оператор", "Низкий", 240, True),
-    ("Анна", "Кладовщик", "Высокий", 30, True),
-    ("Максим", "Водитель-экспедитор", "Средний", 90, True),
-    ("Юлия", "Администратор", "Низкий", 210, True),
+    {"name":"Артём","vacancy":"Водитель","priority":"Высокий","stage":"Квалификация","delta":-30,"answered":True,"next":"Написать кандидату","blocker":"Не отвечает","comment":"Кандидат не выходит на связь после первого контакта."},
+    {"name":"Елена","vacancy":"Курьер","priority":"Средний","stage":"Квалификация","delta":-10,"answered":True,"next":"Позвонить кандидату","blocker":"Не отвечает","comment":"Нужно повторно связаться с кандидатом."},
+    {"name":"Павел","vacancy":"Администратор","priority":"Средний","stage":"Квалификация","delta":20,"answered":True,"next":"Проверить квалификацию","blocker":"Не хватает данных","comment":"Нужно уточнить опыт и доступность."},
+    {"name":"Анна","vacancy":"Кладовщик","priority":"Высокий","stage":"Квалификация","delta":45,"answered":True,"next":"Проверить квалификацию","blocker":"Не хватает данных","comment":"Нужно уточнить график и зарплатные ожидания."},
 
-    ("Виктор", "Менеджер по продажам", "Высокий", 60, True),
-    ("Роман", "Водитель", "Средний", 150, True),
-    ("Наталья", "Кладовщик", "Высокий", 75, True),
-    ("Александр", "Комплектовщик", "Средний", 300, True),
-    ("Екатерина", "Оператор", "Высокий", 40, True),
-    ("Андрей", "Курьер", "Средний", 360, True),
+    {"name":"Максим","vacancy":"Водитель-экспедитор","priority":"Высокий","stage":"Интервью","delta":-20,"answered":True,"next":"Провести интервью","blocker":"Интервью сегодня","comment":"Время интервью уже наступило."},
+    {"name":"Юлия","vacancy":"Администратор","priority":"Высокий","stage":"Интервью","delta":30,"answered":True,"next":"Провести интервью","blocker":"Интервью сегодня","comment":"Интервью запланировано в ближайшие 30 минут."},
+    {"name":"Виктор","vacancy":"Менеджер по продажам","priority":"Средний","stage":"Интервью","delta":90,"answered":True,"next":"Подтвердить интервью","blocker":"Интервью сегодня","comment":"Нужно подтвердить время с кандидатом."},
+    {"name":"Роман","vacancy":"Водитель","priority":"Средний","stage":"Интервью","delta":180,"answered":True,"next":"Провести интервью","blocker":"Интервью сегодня","comment":"Интервью запланировано на сегодня."},
+
+    {"name":"Наталья","vacancy":"Кладовщик","priority":"Высокий","stage":"Документы","delta":-45,"answered":True,"next":"Запросить документы","blocker":"Документы не получены","comment":"Кандидат обещал прислать документы, срок уже прошёл."},
+    {"name":"Александр","vacancy":"Комплектовщик","priority":"Высокий","stage":"Документы","delta":15,"answered":True,"next":"Проверить документы","blocker":"Ждём документы","comment":"Документы должны прийти в ближайшее время."},
+    {"name":"Екатерина","vacancy":"Оператор","priority":"Средний","stage":"Документы","delta":60,"answered":True,"next":"Проверить документы","blocker":"Ждём документы","comment":"Кандидат собирает пакет документов."},
+    {"name":"Андрей","vacancy":"Курьер","priority":"Низкий","stage":"Документы","delta":120,"answered":True,"next":"Проверить документы","blocker":"Ждём документы","comment":"Документы в работе у кандидата."},
+
+    {"name":"Денис","vacancy":"Водитель","priority":"Высокий","stage":"Передан заказчику","delta":-30,"answered":True,"next":"Запросить обратную связь","blocker":"Нет ответа заказчика","comment":"Кандидат передан заказчику, обратная связь просрочена."},
+    {"name":"Кирилл","vacancy":"Кладовщик","priority":"Высокий","stage":"Передан заказчику","delta":30,"answered":True,"next":"Запросить обратную связь","blocker":"Ждём заказчика","comment":"Нужно получить решение заказчика."},
+    {"name":"Михаил","vacancy":"Курьер","priority":"Средний","stage":"Передан заказчику","delta":90,"answered":True,"next":"Проверить статус у заказчика","blocker":"Ждём заказчика","comment":"Кандидат на рассмотрении у заказчика."},
+    {"name":"Илья","vacancy":"Оператор","priority":"Средний","stage":"Передан заказчику","delta":180,"answered":True,"next":"Проверить статус у заказчика","blocker":"Ждём заказчика","comment":"Нужно проконтролировать обратную связь."},
+
+    {"name":"Николай","vacancy":"Водитель","priority":"Высокий","stage":"Выход на работу","delta":-20,"answered":True,"next":"Подтвердить выход","blocker":"Выход сегодня","comment":"Сегодня день выхода. Нужно подтвердить готовность."},
+    {"name":"Павел","vacancy":"Кладовщик","priority":"Высокий","stage":"Выход на работу","delta":45,"answered":True,"next":"Подтвердить выход","blocker":"Выход сегодня","comment":"Выход запланирован на сегодня."},
+    {"name":"Владислав","vacancy":"Комплектовщик","priority":"Средний","stage":"Выход на работу","delta":180,"answered":True,"next":"Напомнить кандидату","blocker":"Выход сегодня","comment":"Нужно подтвердить выход кандидата."},
+
+    {"name":"Глеб","vacancy":"Администратор","priority":"Средний","stage":"Ожидаем решение","delta":-15,"answered":True,"next":"Запросить решение","blocker":"Нет решения","comment":"После интервью решение не получено в ожидаемый срок."},
+    {"name":"Егор","vacancy":"Менеджер по продажам","priority":"Высокий","stage":"Ожидаем решение","delta":45,"answered":True,"next":"Запросить решение","blocker":"Нет решения","comment":"Нужно получить решение по кандидату."},
+    {"name":"Степан","vacancy":"Водитель","priority":"Средний","stage":"Ожидаем решение","delta":120,"answered":True,"next":"Проверить статус","blocker":"Ждём решение","comment":"Решение ожидается сегодня."},
+    {"name":"Тимур","vacancy":"Курьер","priority":"Низкий","stage":"Ожидаем решение","delta":240,"answered":True,"next":"Проверить статус","blocker":"Ждём решение","comment":"Кандидат на финальном согласовании."},
 ]
+
 
 WORK_STAGES = [
     "Новый кандидат",
@@ -184,7 +199,7 @@ def stage_map(category_id):
 
 
 def create_sla_candidate(category_id, user_id, stages, index):
-    name, vacancy, priority, deadline_delta, answered = SLA_SCENARIO[index]
+    name, vacancy, priority, deadline_delta, answered = WORKDAY_SCENARIO[index]
 
     now = datetime.now()
     deadline = now + timedelta(minutes=deadline_delta)
@@ -192,7 +207,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
     response = inbound + timedelta(minutes=35) if answered else None
 
     # Первые 6 — именно SLA-очередь. Остальные распределяются по рабочим стадиям.
-    stage_name = "Новый кандидат" if index < 6 else WORK_STAGES[1 + ((index - 6) % (len(WORK_STAGES) - 1))]
+    stage_name = scenario_stage
     stage_id = stages[stage_name]
 
     contact = call(
@@ -241,7 +256,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
 
     # Для первых шести кандидатов сначала создаём сделку вне «Новый кандидат».
     # Так демо-SLA записывается ДО входа в стадию, где срабатывает робот.
-    create_stage_id = stages["Квалификация"] if index < 6 else stage_id
+    create_stage_id = stages["Квалификация"] if stage_name == "Новый кандидат" else stage_id
 
     deal = call(
         "crm.item.add",
@@ -263,7 +278,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
     )
     deal_id = int(deal["item"]["id"])
 
-    if index < 6:
+    if stage_name == "Новый кандидат":
         # Сначала записываем демо-SLA в безопасной стадии, затем переводим в «Новый кандидат».
         call(
             "crm.item.update",
@@ -423,13 +438,13 @@ class App:
 
         ttk.Label(
             frame,
-            text="STAFFFLOW — SLA DEMO",
+            text="STAFFFLOW — WORKDAY DEMO",
             font=("Segoe UI", 18, "bold"),
         ).pack(pady=(0, 8))
 
         ttk.Label(
             frame,
-            text="Генератор создаёт кандидатов по заранее заданному сюжету",
+            text="Генератор создаёт реальные рабочие ситуации: SLA, звонки, интервью, документы и заказчик",
             font=("Segoe UI", 10),
         ).pack(pady=(0, 18))
 
@@ -444,7 +459,7 @@ class App:
 
         ttk.Label(
             frame,
-            text="Сценарий SLA",
+            text="Рабочий день рекрутёра",
             font=("Segoe UI", 12, "bold"),
         ).pack(anchor="w")
 
@@ -462,7 +477,7 @@ class App:
 
         ttk.Button(
             row,
-            text="▶ ЗАПУСТИТЬ СЦЕНАРИЙ",
+            text="▶ ЗАПУСТИТЬ РАБОЧИЙ ДЕНЬ",
             command=self.start_scenario,
         ).pack(side="left", padx=5)
 
@@ -515,7 +530,7 @@ class App:
 
         ttk.Button(
             row,
-            text="🗑 УДАЛИТЬ ДЕМО-СЦЕНАРИЙ",
+            text="🗑 УДАЛИТЬ ДЕМО-ДЕНЬ",
             command=self.delete_demo,
         ).pack(side="left", padx=5)
 
@@ -525,7 +540,7 @@ class App:
             command=self.reset_scenario,
         ).pack(side="left", padx=5)
 
-        self.status = tk.StringVar(value="Готов. Сделок в сценарии: 0 / 18")
+        self.status = tk.StringVar(value="Готов. Кандидатов в сценарии: 0 / 30")
         ttk.Label(
             frame,
             textvariable=self.status,
@@ -621,8 +636,8 @@ class App:
     def _create_next_worker(self):
         try:
             self.ensure_ready()
-            if self.scenario_index >= len(SLA_SCENARIO):
-                self.root.after(0, lambda: self.status.set("Сценарий завершён: 50 / 50"))
+            if self.scenario_index >= len(WORKDAY_SCENARIO):
+                self.root.after(0, lambda: self.status.set("Сценарий завершён: 30 / 30"))
                 return
 
             result = create_sla_candidate(
@@ -634,7 +649,7 @@ class App:
             self.scenario_index += 1
             self.created += 1
 
-            name, vacancy, priority, delta, answered = SLA_SCENARIO[self.scenario_index - 1]
+            name, vacancy, priority, delta, answered = WORKDAY_SCENARIO[self.scenario_index - 1]
             if delta < 0:
                 timing = f"просрочено на {abs(delta)} мин"
             elif answered:
@@ -697,7 +712,7 @@ class App:
         self.pause()
         self.scenario_index = 0
         self.created = 0
-        self.status.set("Сценарий сброшен: 0 / 50")
+        self.status.set("Сценарий сброшен: 0 / 30")
 
     def delete_demo(self):
         if not messagebox.askyesno(

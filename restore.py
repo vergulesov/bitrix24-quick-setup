@@ -64,28 +64,33 @@ def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
                 "title": CHAT_TITLE,
             }
 
-    # Документированный способ получить CHAT_ID из списка текущих
-    # Open Channel диалогов пользователя.
+    # Fallback: получить CHAT_ID из списка чатов Messenger.
+    # Этот метод требует scope "im"; поэтому он используется только
+    # после выдачи webhook доступа CRM + imopenlines + im.
     recent = client.call(
-        "im.recent.get",
+        "im.recent.list",
         {
-            "ONLY_OPENLINES": "Y",
+            "SKIP_OPENLINES": "N",
+            "SKIP_DIALOG": "Y",
+            "SKIP_CHAT": "Y",
+            "SKIP_UNDISTRIBUTED_OPENLINES": "N",
+            "OFFSET": 0,
+            "LIMIT": 200,
         },
-    ) or []
+    ) or {}
 
-    print(f"Open Line chats in recent list: {len(recent)}")
+    items = recent.get("items", []) if isinstance(recent, dict) else []
+    print(f"Open Line chats in recent list: {len(items)}")
 
-    for item in recent:
+    for item in items:
+        chat_id = item.get("chat_id")
+        title = item.get("title")
+        lines = item.get("lines") or {}
         chat = item.get("chat") or {}
-        chat_id = item.get("chat_id") or chat.get("id")
-        title = item.get("title") or chat.get("title")
-        message = (item.get("message") or {}).get("text", "")
 
         print(
             f"Open Line recent: CHAT_ID={chat_id} | "
-            f"title={title!r} | message={message!r} | "
-            f"entity_type={chat.get('entity_type')} | "
-            f"entity_id={chat.get('entity_id')}"
+            f"title={title!r} | lines={lines}"
         )
 
         if chat_id:

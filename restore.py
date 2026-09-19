@@ -64,39 +64,50 @@ def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
                 "title": CHAT_TITLE,
             }
 
-    # Fallback: получить CHAT_ID из списка чатов Messenger.
-    # Этот метод требует scope "im"; поэтому он используется только
-    # после выдачи webhook доступа CRM + imopenlines + im.
-    recent = client.call(
-        "im.recent.list",
+    # Официальный Open Lines API умеет получить ID последнего чата,
+    # связанного с CRM-объектом. Это требует только scope imopenlines.
+    # Сначала проверяем известные тестовые сделки, затем несколько самых
+    # свежих сделок — именно так Bitrix создаёт CRM-объект из Open Line.
+    deal_ids = [421, DEAL_ID]
+
+    recent_deals = client.call(
+        "crm.item.list",
         {
-            "SKIP_OPENLINES": "N",
-            "SKIP_DIALOG": "Y",
-            "SKIP_CHAT": "Y",
-            "SKIP_UNDISTRIBUTED_OPENLINES": "N",
-            "OFFSET": 0,
-            "LIMIT": 200,
+            "entityTypeId": 2,
+            "select": ["id", "title", "categoryId", "stageId"],
+            "order": {"id": "DESC"},
+            "start": 0,
         },
     ) or {}
+    for deal in (recent_deals.get("items") or [])[:20]:
+        deal_id = int(deal["id"])
+        if deal_id not in deal_ids:
+            deal_ids.append(deal_id)
 
-    items = recent.get("items", []) if isinstance(recent, dict) else []
-    print(f"Open Line chats in recent list: {len(items)}")
+    print(f"Checking last Open Line chat for {len(deal_ids)} deals")
 
-    for item in items:
-        chat_id = item.get("chat_id")
-        title = item.get("title")
-        lines = item.get("lines") or {}
-        chat = item.get("chat") or {}
-
-        print(
-            f"Open Line recent: CHAT_ID={chat_id} | "
-            f"title={title!r} | lines={lines}"
-        )
+    for deal_id in deal_ids:
+        try:
+            chat_id = client.call(
+                "imopenlines.crm.chat.getLastId",
+                {
+                    "CRM_ENTITY_TYPE": "deal",
+                    "CRM_ENTITY": deal_id,
+                },
+            )
+        except Exception as exc:
+            print(f"deal {deal_id}: getLastId skipped: {exc}")
+            continue
 
         if chat_id:
+            print(
+                f"Найден последний Open Line чат через deal {deal_id}: "
+                f"CHAT_ID={chat_id}"
+            )
             return {
                 "chat_id": int(chat_id),
-                "title": str(title or CHAT_TITLE),
+                "title": CHAT_TITLE,
+                "source_deal_id": deal_id,
             }
 
     # Если прямые проверки не нашли привязку, выходим с точным результатом.

@@ -256,6 +256,12 @@ def create_sla_candidate(category_id, user_id, stages, index):
     stage_name = scenario_stage
     stage_id = stages[stage_name]
 
+    action_priority = (
+        "Просрочено" if deadline_delta < 0
+        else "Новое входящее" if stage_name == "Новый кандидат" and not answered
+        else "Обычная задача"
+    )
+
     fields = {
         DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
         DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: "Демо",
@@ -267,6 +273,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response.isoformat(timespec="seconds") if response else "",
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["PRIORITY"]: priority,
+        DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
         DEAL_FIELD_CODES["BLOCKER"]: blocker,
         DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
         # Для рабочего дня это время следующего действия.
@@ -301,6 +308,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: priority,
+                    DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
                     DEAL_FIELD_CODES["BLOCKER"]: blocker,
                     DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
                 },
@@ -392,6 +400,9 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             DEAL_FIELD_CODES["DESIRED_POSITION"]: scenario["vacancy"],
             DEAL_FIELD_CODES["VACANCY"]: scenario["vacancy"],
             DEAL_FIELD_CODES["PRIORITY"]: scenario["priority"],
+            DEAL_FIELD_CODES["ACTION_PRIORITY"]: (
+                "Просрочено" if scenario["delta"] < 0 else "Обычная задача"
+            ),
             DEAL_FIELD_CODES["BLOCKER"]: scenario["blocker"],
             DEAL_FIELD_CODES["NEXT_STEP"]: scenario["next"],
             DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
@@ -740,7 +751,11 @@ class App:
             self.scenario_index += 1
             self.created += 1
 
-            name, vacancy, priority, delta, answered = WORKDAY_SCENARIO[self.scenario_index - 1]
+            scenario = WORKDAY_SCENARIO[self.scenario_index - 1]
+            name = scenario["name"]
+            priority = scenario["priority"]
+            delta = scenario["delta"]
+            answered = scenario["answered"]
             if delta < 0:
                 timing = f"просрочено на {abs(delta)} мин"
             elif answered:

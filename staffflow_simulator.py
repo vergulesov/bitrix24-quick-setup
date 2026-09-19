@@ -211,8 +211,8 @@ def send_workday_incoming(name, vacancy, index):
     )
     response.raise_for_status()
     data = response.json()
-    if not data.get("ok"):
-        raise RuntimeError(f"Connector /send вернул ошибку: {data}")
+    if not isinstance(data, dict) or not data.get("ok"):
+        raise RuntimeError(f"Connector /send вернул ошибку: {data!r}")
     return data
 
 

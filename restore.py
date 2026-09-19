@@ -30,6 +30,8 @@ def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
     candidates.extend([
         ("contact", int(find_contact(client)["ID"])) if find_contact(client) else None,
         ("deal", DEAL_ID),
+        # Open Line ранее создал этот тестовый deal в общей воронке.
+        ("deal", 421),
     ])
     candidates = [item for item in candidates if item is not None]
 
@@ -62,59 +64,12 @@ def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
                 "title": CHAT_TITLE,
             }
 
-    # Open Line может сначала создать отдельную сделку в общей воронке.
-    # Поэтому ищем такие сделки по названию и затем используем
-    # документированный imopenlines.crm.chat.get.
-    result = client.call(
-        "crm.item.list",
-        {
-            "entityTypeId": 2,
-            "select": ["id", "title", "categoryId", "stageId"],
-            "filter": {"%title": "Открытая линия"},
-            "order": {"id": "DESC"},
-            "start": 0,
-        },
-    )
-    deals = (result or {}).get("items", [])
-
-    print(f"Open Line candidate deals found: {len(deals)}")
-
-    for deal in deals:
-        deal_id = int(deal["id"])
-        if ("deal", deal_id) in checked:
-            continue
-
-        print(
-            f"Проверяем сделку {deal_id}: "
-            f"{deal.get('title')} | category={deal.get('categoryId')}"
-        )
-
-        result = client.call(
-            "imopenlines.crm.chat.get",
-            {
-                "CRM_ENTITY_TYPE": "deal",
-                "CRM_ENTITY": deal_id,
-                "ACTIVE_ONLY": "N",
-            },
-        )
-        chats = result or []
-        if chats:
-            chat = chats[-1]
-            print(
-                f"Найден Open Line чат через сделку {deal_id}: "
-                f"CHAT_ID={chat.get('CHAT_ID')} | "
-                f"{chat.get('CONNECTOR_TITLE')}"
-            )
-            return {
-                "chat_id": int(chat["CHAT_ID"]),
-                "title": str(deal.get("title") or CHAT_TITLE),
-                "source_deal_id": deal_id,
-            }
-
+    # Если прямые проверки не нашли привязку, выходим с точным результатом.
+    # Не полагаемся на полнотекстовый фильтр по title: его поведение
+    # зависит от версии CRM REST.
     raise RuntimeError(
         "Open Line чат не найден через CRM-привязки. "
-        "Проверь, существует ли созданная Open Line сделка и "
-        "есть ли у текущего webhook-пользователя доступ к ней."
+        "Проверены контакт, deal 419 и ранее созданный Open Line deal 421."
     )
 
 def get_dialog(client: BitrixClient, chat_id: int) -> dict[str, Any]:

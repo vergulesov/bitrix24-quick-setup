@@ -153,10 +153,20 @@ def send_openline_test():
         timeout=20,
     )
     response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, dict) or not data.get("ok"):
+    # Connector может вернуть пустой/null body при успешном HTTP 2xx.
+    # Для симулятора важен сам факт успешной доставки запроса.
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+
+    if isinstance(data, dict) and data.get("ok") is False:
         raise RuntimeError(f"Connector /send вернул ошибку: {data!r}")
-    return data
+    if response.status_code < 200 or response.status_code >= 300:
+        raise RuntimeError(
+            f"Connector /send вернул HTTP {response.status_code}: {response.text!r}"
+        )
+    return data or {"ok": True, "status_code": response.status_code}
 
 
 def count_pipeline_deals(category_id):
@@ -210,10 +220,20 @@ def send_workday_incoming(name, vacancy, index):
         timeout=20,
     )
     response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, dict) or not data.get("ok"):
+    # Connector может вернуть пустой/null body при успешном HTTP 2xx.
+    # Для симулятора важен сам факт успешной доставки запроса.
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+
+    if isinstance(data, dict) and data.get("ok") is False:
         raise RuntimeError(f"Connector /send вернул ошибку: {data!r}")
-    return data
+    if response.status_code < 200 or response.status_code >= 300:
+        raise RuntimeError(
+            f"Connector /send вернул HTTP {response.status_code}: {response.text!r}"
+        )
+    return data or {"ok": True, "status_code": response.status_code}
 
 
 def find_recent_deal(category_id, name, timeout=15):

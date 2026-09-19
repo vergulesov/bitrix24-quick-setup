@@ -70,7 +70,7 @@ def get_new_stage(category_id):
     )
 
 
-def create_candidate(stage_id):
+def create_candidate(category_id, stage_id):
     name = random.choice(NAMES)
     position = random.choice(POSITIONS)
     title = f"[DEMO] {name} — {position}"
@@ -80,7 +80,7 @@ def create_candidate(stage_id):
             "entityTypeId": 2,
             "fields": {
                 "title": title,
-                "categoryId": CATEGORY_ID,
+                "categoryId": category_id,
                 "stageId": stage_id,
             },
         },

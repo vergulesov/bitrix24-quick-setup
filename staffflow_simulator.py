@@ -318,7 +318,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                     "stageId": create_stage_id,
                     "assignedById": user_id,
                     "comments": DEMO_COMMENT,
-                    **{k: v for k, v in fields.items() if k != DEAL_FIELD_CODES["CANDIDATE_SOURCE"] and k != DEAL_FIELD_CODES["RESPONSE_DEADLINE"]},
+                    **{k: v for k, v in fields.items() if k != DEAL_FIELD_CODES["CANDIDATE_SOURCE"]},
                 },
             },
         )
@@ -359,17 +359,6 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 "fields": {"stageId": stage_id},
             },
         )
-    else:
-        call(
-            "crm.item.update",
-            {
-                "entityTypeId": 2,
-                "id": deal_id,
-                "useOriginalUfNames": "Y",
-                "fields": {k: v for k, v in fields.items() if k != DEAL_FIELD_CODES["CANDIDATE_SOURCE"]},
-            },
-        )
-
     time.sleep(2)
 
 

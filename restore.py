@@ -68,11 +68,35 @@ def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
             "title": CHAT_TITLE,
         }
 
+    probe_openline_session(client)
     raise RuntimeError(
         "Open Line чат не найден через CRM-привязки. "
-        "im.recent.list больше не используется, поэтому нужен "
-        "другой способ получить CHAT_ID."
+        "Диагностика session.open выполнена выше."
     )
+
+def probe_openline_session(client: BitrixClient) -> None:
+    """
+    Диагностика: пробуем получить/открыть сессию Open Line.
+    Ничего в CRM не изменяем.
+    """
+    user_codes = [
+        "telegram|1|StaffFlow_Test_Bot|vergelesn",
+        "telegram|1|StaffFlow_Test_Bot|79090812390",
+        "telegram|1|StaffFlow_Test_Bot|+79090812390",
+    ]
+
+    for user_code in user_codes:
+        print(f"\nПробуем USER_CODE: {user_code}")
+        try:
+            result = client.call(
+                "imopenlines.session.open",
+                {"USER_CODE": user_code},
+            )
+            print(f"session.open RESULT: {result}")
+        except Exception as exc:
+            print(f"session.open ERROR: {exc}")
+
+
 
 def get_dialog(client: BitrixClient, chat_id: int) -> dict[str, Any]:
     return client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})

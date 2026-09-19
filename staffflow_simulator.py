@@ -251,16 +251,39 @@ def create_sla_candidate(category_id, user_id, stages, index):
     # Ждём завершения роботов и только потом задаём контролируемый SLA для демо.
     time.sleep(2)
 
-    # Робот мог поставить стандартные +2 часа. Для демонстрации SLA
-    # сразу задаём контролируемое состояние: просрочено / 25 мин / 70 мин и т.д.
-    call(
-        "crm.item.update",
-        {
-            "entityTypeId": 2,
-            "id": deal_id,
-            "fields": fields,
-        },
-    )
+    # Роботы стадии «Новый кандидат» могут асинхронно выставить стандартный SLA.
+    # Для демо ждём их завершения, затем задаём контролируемый дедлайн и
+    # проверяем, что Bitrix его действительно сохранил.
+    time.sleep(10)
+
+    for _ in range(3):
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "fields": fields,
+            },
+        )
+        time.sleep(2)
+
+        check = call(
+            "crm.item.get",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+            },
+        )
+        saved = check.get("item", {}).get(DEAL_FIELD_CODES["RESPONSE_DEADLINE"])
+        if saved:
+            try:
+                saved_dt = datetime.fromisoformat(str(saved).replace("Z", "+00:00"))
+                if abs((saved_dt - deadline).total_seconds()) < 5:
+                    break
+            except (TypeError, ValueError):
+                pass
+
+    
 
     call(
         "crm.timeline.comment.add",

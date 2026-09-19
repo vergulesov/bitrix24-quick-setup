@@ -4,7 +4,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import requests
 from dotenv import load_dotenv
@@ -186,7 +186,7 @@ def stage_map(category_id):
 def create_sla_candidate(category_id, user_id, stages, index):
     name, vacancy, priority, deadline_delta, answered = SLA_SCENARIO[index]
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now()
     deadline = now + timedelta(minutes=deadline_delta)
     inbound = deadline - timedelta(hours=2)
     response = inbound + timedelta(minutes=35) if answered else None

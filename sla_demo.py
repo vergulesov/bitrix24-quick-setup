@@ -5,27 +5,27 @@ from datetime import datetime, timedelta, timezone
 from bitrix import BitrixClient
 from schema import DEAL_FIELD_CODES
 
-DEMO_COMMENT = "SLA DEMO DATA"
+DEMO_COMMENT = "Синтетические SLA-демо-данные для тестовой презентации."
 
 CASES = [
-    ("Alexey Petrov", "Driver", "New candidate", "High", "No response", "Reply to candidate", -95, False),
-    ("Marina Sokolova", "Warehouse", "New candidate", "High", "No response", "Reply to candidate", -35, False),
-    ("Dmitry Volkov", "Courier", "New candidate", "Medium", "No response", "Reply to candidate", 25, False),
-    ("Olga Morozova", "Operator", "New candidate", "High", "Missing information", "Clarify terms", 70, False),
-    ("Sergey Orlov", "Picker", "New candidate", "Low", "No response", "Reply to candidate", 115, False),
-    ("Irina Lebedeva", "Sales manager", "New candidate", "Medium", "Response received", "Start qualification", 180, True),
-    ("Artem Vasiliev", "Driver", "Qualification", "High", "Missing information", "Clarify experience", 45, True),
-    ("Elena Fedorova", "Courier", "Qualification", "Medium", "Interview to schedule", "Agree interview time", 120, True),
-    ("Petr Kuznetsov", "Operator", "Qualification", "Low", "Missing information", "Request documents", 240, True),
-    ("Anna Popova", "Warehouse", "Interview", "High", "Interview to schedule", "Run interview", 30, True),
-    ("Maxim Vlasov", "Driver", "Interview", "Medium", "Waiting candidate", "Confirm interview", 90, True),
-    ("Yulia Smirnova", "Admin", "Interview", "Low", "Waiting candidate", "Get confirmation", 210, True),
-    ("Victor Ivanov", "Sales manager", "Waiting decision", "High", "Waiting client", "Ask client for decision", 60, True),
+    ("Alexey Petrov", "Водитель", "Новый кандидат", "Высокий", "Не ответил кандидату", "Ответить кандидату", -95, False),
+    ("Marina Sokolova", "Кладовщик", "New candidate", "High", "No response", "Reply to candidate", -35, False),
+    ("Dmitry Volkov", "Курьер", "New candidate", "Средний", "No response", "Reply to candidate", 25, False),
+    ("Olga Morozova", "Оператор", "New candidate", "High", "Не хватает информации", "Уточнить условия", 70, False),
+    ("Sergey Orlov", "Комплектовщик", "New candidate", "Низкий", "No response", "Reply to candidate", 115, False),
+    ("Irina Lebedeva", "Менеджер по продажам", "New candidate", "Medium", "Ответ получен", "Провести квалификацию", 180, True),
+    ("Artem Vasiliev", "Driver", "Квалификация", "High", "Missing information", "Уточнить опыт", 45, True),
+    ("Elena Fedorova", "Courier", "Qualification", "Medium", "Назначить интервью", "Согласовать время интервью", 120, True),
+    ("Petr Kuznetsov", "Operator", "Qualification", "Low", "Missing information", "Запросить документы", 240, True),
+    ("Anna Popova", "Warehouse", "Интервью", "High", "Interview to schedule", "Провести интервью", 30, True),
+    ("Maxim Vlasov", "Driver", "Interview", "Medium", "Ждём кандидата", "Подтвердить интервью", 90, True),
+    ("Yulia Smirnova", "Администратор", "Interview", "Low", "Waiting candidate", "Получить подтверждение", 210, True),
+    ("Victor Ivanov", "Sales manager", "Ожидаем решение", "High", "Ждём заказчика", "Уточнить решение заказчика", 60, True),
     ("Roman Orlov", "Driver", "Waiting decision", "Medium", "Waiting candidate", "Get confirmation", 150, True),
-    ("Natalia Volkova", "Warehouse", "Documents", "High", "Missing information", "Check documents", 75, True),
-    ("Alexander Sidorov", "Picker", "Documents", "Medium", "Waiting candidate", "Get document set", 300, True),
-    ("Ekaterina Petrova", "Operator", "Sent to client", "High", "Waiting client", "Get feedback", 40, True),
-    ("Andrey Morozov", "Courier", "Start work", "Medium", "Other", "Control start", 360, True),
+    ("Natalia Volkova", "Warehouse", "Документы", "High", "Missing information", "Проверить документы", 75, True),
+    ("Alexander Sidorov", "Picker", "Documents", "Medium", "Waiting candidate", "Получить комплект документов", 300, True),
+    ("Ekaterina Petrova", "Operator", "Передан заказчику", "High", "Waiting client", "Получить обратную связь", 40, True),
+    ("Andrey Morozov", "Courier", "Выход на работу", "Medium", "Другое", "Контроль выхода", 360, True),
 ]
 
 def stage_map(client: BitrixClient, category_id: int) -> dict[str, str]:

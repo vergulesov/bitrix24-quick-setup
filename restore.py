@@ -15,21 +15,37 @@ CHAT_TITLE = "Никита — Открытая линия"
 
 def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
     """
-    Находим чат через CRM-привязку, без im.recent.list.
-    Текущий тестовый контакт виден в UI как contact/3, а если
-    привязки к контакту нет — пробуем тестовую сделку 419.
+    Находим Open Line чат через документированный CRM REST путь.
+
+    1) Проверяем известные CRM-объекты.
+    2) Если привязки нет — ищем свежие сделки с названием,
+       созданным Open Line, и проверяем их через imopenlines.crm.chat.get.
+
+    USER_CODE не угадываем: после получения CHAT_ID его можно получить
+    из imopenlines.dialog.get / session.history.get.
     """
-    # 1. Ищем контакт по телефону и проверяем связанные Open Line чаты.
-    contact = find_contact(client)
-    if contact:
-        contact_id = int(contact["ID"])
-        print(f"Contact {contact_id} raw IM: {contact.get('IM')}")
-        print(f"Contact {contact_id} raw data: {contact}")
+    candidates: list[tuple[str, int]] = []
+
+    # Известные объекты из нашего теста.
+    candidates.extend([
+        ("contact", int(find_contact(client)["ID"])) if find_contact(client) else None,
+        ("deal", DEAL_ID),
+    ])
+    candidates = [item for item in candidates if item is not None]
+
+    checked: set[tuple[str, int]] = set()
+
+    for entity_type, entity_id in candidates:
+        key = (entity_type, entity_id)
+        if key in checked:
+            continue
+        checked.add(key)
+
         result = client.call(
             "imopenlines.crm.chat.get",
             {
-                "CRM_ENTITY_TYPE": "contact",
-                "CRM_ENTITY": contact_id,
+                "CRM_ENTITY_TYPE": entity_type,
+                "CRM_ENTITY": entity_id,
                 "ACTIVE_ONLY": "N",
             },
         )
@@ -37,7 +53,7 @@ def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
         if chats:
             chat = chats[-1]
             print(
-                f"Найден чат через контакт {contact_id}: "
+                f"Найден чат через {entity_type} {entity_id}: "
                 f"CHAT_ID={chat.get('CHAT_ID')} | "
                 f"{chat.get('CONNECTOR_TITLE')}"
             )
@@ -46,57 +62,60 @@ def find_openline_chat(client: BitrixClient) -> dict[str, Any]:
                 "title": CHAT_TITLE,
             }
 
-    # 2. На всякий случай проверяем тестовую сделку.
+    # Open Line может сначала создать отдельную сделку в общей воронке.
+    # Поэтому ищем такие сделки по названию и затем используем
+    # документированный imopenlines.crm.chat.get.
     result = client.call(
-        "imopenlines.crm.chat.get",
+        "crm.item.list",
         {
-            "CRM_ENTITY_TYPE": "deal",
-            "CRM_ENTITY": DEAL_ID,
-            "ACTIVE_ONLY": "N",
+            "entityTypeId": 2,
+            "select": ["id", "title", "categoryId", "stageId"],
+            "filter": {"%title": "Открытая линия"},
+            "order": {"id": "DESC"},
+            "start": 0,
         },
     )
-    chats = result or []
-    if chats:
-        chat = chats[-1]
-        print(
-            f"Найден чат через сделку {DEAL_ID}: "
-            f"CHAT_ID={chat.get('CHAT_ID')} | "
-            f"{chat.get('CONNECTOR_TITLE')}"
-        )
-        return {
-            "chat_id": int(chat["CHAT_ID"]),
-            "title": CHAT_TITLE,
-        }
+    deals = (result or {}).get("items", [])
 
-    probe_openline_session(client)
+    print(f"Open Line candidate deals found: {len(deals)}")
+
+    for deal in deals:
+        deal_id = int(deal["id"])
+        if ("deal", deal_id) in checked:
+            continue
+
+        print(
+            f"Проверяем сделку {deal_id}: "
+            f"{deal.get('title')} | category={deal.get('categoryId')}"
+        )
+
+        result = client.call(
+            "imopenlines.crm.chat.get",
+            {
+                "CRM_ENTITY_TYPE": "deal",
+                "CRM_ENTITY": deal_id,
+                "ACTIVE_ONLY": "N",
+            },
+        )
+        chats = result or []
+        if chats:
+            chat = chats[-1]
+            print(
+                f"Найден Open Line чат через сделку {deal_id}: "
+                f"CHAT_ID={chat.get('CHAT_ID')} | "
+                f"{chat.get('CONNECTOR_TITLE')}"
+            )
+            return {
+                "chat_id": int(chat["CHAT_ID"]),
+                "title": str(deal.get("title") or CHAT_TITLE),
+                "source_deal_id": deal_id,
+            }
+
     raise RuntimeError(
         "Open Line чат не найден через CRM-привязки. "
-        "Диагностика session.open выполнена выше."
+        "Проверь, существует ли созданная Open Line сделка и "
+        "есть ли у текущего webhook-пользователя доступ к ней."
     )
-
-def probe_openline_session(client: BitrixClient) -> None:
-    """
-    Диагностика: пробуем получить/открыть сессию Open Line.
-    Ничего в CRM не изменяем.
-    """
-    user_codes = [
-        "telegram|1|StaffFlow_Test_Bot|vergelesn",
-        "telegram|1|StaffFlow_Test_Bot|79090812390",
-        "telegram|1|StaffFlow_Test_Bot|+79090812390",
-    ]
-
-    for user_code in user_codes:
-        print(f"\nПробуем USER_CODE: {user_code}")
-        try:
-            result = client.call(
-                "imopenlines.session.open",
-                {"USER_CODE": user_code},
-            )
-            print(f"session.open RESULT: {result}")
-        except Exception as exc:
-            print(f"session.open ERROR: {exc}")
-
-
 
 def get_dialog(client: BitrixClient, chat_id: int) -> dict[str, Any]:
     return client.call("imopenlines.dialog.get", {"CHAT_ID": chat_id})

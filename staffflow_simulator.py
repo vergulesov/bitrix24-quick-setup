@@ -224,9 +224,9 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["PRIORITY"]: priority,
         DEAL_FIELD_CODES["BLOCKER"]: "Не ответил кандидату" if not answered else "В работе",
         DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату" if not answered else "Следующий шаг",
-        DEAL_FIELD_CODES["NEXT_ACTION_AT"]: (
-            (now + timedelta(minutes=max(10, deadline_delta))).isoformat(timespec="seconds")
-        ),
+        # Для демо «Следующее действие» должно совпадать со SLA-дедлайном:
+        # просрочено для первых кандидатов, будущее для остальных.
+        DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
     }
 
     deal = call(

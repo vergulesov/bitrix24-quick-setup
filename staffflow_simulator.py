@@ -229,6 +229,10 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
     }
 
+    # Для первых шести кандидатов сначала создаём сделку вне «Новый кандидат».
+    # Так демо-SLA записывается ДО входа в стадию, где срабатывает робот.
+    create_stage_id = stages["Квалификация"] if index < 6 else stage_id
+
     deal = call(
         "crm.item.add",
         {
@@ -236,7 +240,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
             "fields": {
                 "title": f"{name} — {vacancy}",
                 "categoryId": category_id,
-                "stageId": stage_id,
+                "stageId": create_stage_id,
                 "assignedById": user_id,
                 "contactIds": [contact_id],
                 "comments": DEMO_COMMENT,
@@ -246,44 +250,38 @@ def create_sla_candidate(category_id, user_id, stages, index):
     )
     deal_id = int(deal["item"]["id"])
 
-    # При создании сделки срабатывают роботы стадии «Новый кандидат»,
-    # которые могут асинхронно перезаписать SLA на стандартные +2 часа.
-    # Ждём завершения роботов и только потом задаём контролируемый SLA для демо.
-    time.sleep(2)
-
-    # Роботы стадии «Новый кандидат» могут асинхронно выставить стандартный SLA.
-    # Для демо ждём их завершения, затем задаём контролируемый дедлайн и
-    # проверяем, что Bitrix его действительно сохранил.
-    time.sleep(10)
-
-    for _ in range(3):
+    if index < 6:
+        # Поля уже заполнены при создании. Теперь переводим в «Новый кандидат».
         call(
             "crm.item.update",
             {
                 "entityTypeId": 2,
                 "id": deal_id,
-                "fields": fields,
+                "fields": {"stageId": stage_id},
             },
         )
-        time.sleep(2)
 
-        check = call(
-            "crm.item.get",
-            {
-                "entityTypeId": 2,
-                "id": deal_id,
-            },
-        )
-        saved = check.get("item", {}).get(DEAL_FIELD_CODES["RESPONSE_DEADLINE"])
-        if saved:
-            try:
-                saved_dt = datetime.fromisoformat(str(saved).replace("Z", "+00:00"))
-                if abs((saved_dt - deadline).total_seconds()) < 5:
-                    break
-            except (TypeError, ValueError):
-                pass
+    # Даём Bitrix завершить роботов и проверяем, что демо-SLA сохранился.
+    time.sleep(3)
+    check = call(
+        "crm.item.get",
+        {
+            "entityTypeId": 2,
+            "id": deal_id,
+        },
+    )
+    saved = check.get("item", {}).get(DEAL_FIELD_CODES["RESPONSE_DEADLINE"])
+    if index < 6 and saved:
+        try:
+            saved_dt = datetime.fromisoformat(str(saved).replace("Z", "+00:00"))
+            if abs((saved_dt - deadline).total_seconds()) >= 5:
+                raise RuntimeError(
+                    f"Bitrix перезаписал демо-SLA: ожидалось {deadline.isoformat()}, "
+                    f"получено {saved}"
+                )
+        except ValueError:
+            pass
 
-    
 
     call(
         "crm.timeline.comment.add",

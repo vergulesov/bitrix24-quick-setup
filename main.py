@@ -55,7 +55,7 @@ def inspect() -> None:
             )
 
 def usage() -> None:
-    print("Usage: python main.py [check|setup|demo|demo-new N|demo-clear|inspect]")
+    print("Usage: python main.py [check|setup|demo|demo-new N|demo-clear|restore-test|inspect]")
 
 
 if __name__ == "__main__":

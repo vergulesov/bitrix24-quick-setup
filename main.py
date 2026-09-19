@@ -7,6 +7,7 @@ from config import get_settings
 from demo import clear as clear_demo
 from demo import run as run_demo
 from setup import ensure_pipeline, setup
+from restore import run as restore_test
 
 
 def make_client() -> BitrixClient:
@@ -71,6 +72,8 @@ if __name__ == "__main__":
         demo(count=count)
     elif command == "demo-clear":
         clear()
+    elif command == "restore-test":
+        restore_test(make_client())
     elif command == "inspect":
         inspect()
     else:

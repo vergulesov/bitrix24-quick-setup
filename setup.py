@@ -303,6 +303,7 @@ def configure_deal_card(
                 {"name": fields["LAST_RESPONSE_AT"], "optionFlags": 1},
                 {"name": fields["RESPONSE_DEADLINE"], "optionFlags": 1},
                 {"name": fields["PRIORITY"], "optionFlags": 1},
+                {"name": fields["ACTION_PRIORITY"], "optionFlags": 1},
                 {"name": fields["BLOCKER"], "optionFlags": 1},
                 {"name": fields["NEXT_STEP"], "optionFlags": 1},
                 {"name": fields["NEXT_ACTION_AT"], "optionFlags": 1},

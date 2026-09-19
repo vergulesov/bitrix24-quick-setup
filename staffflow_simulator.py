@@ -2,6 +2,7 @@ import os
 import random
 import threading
 import time
+import traceback
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime, timedelta
@@ -82,7 +83,19 @@ def call(method, params=None):
         timeout=20,
     )
     response.raise_for_status()
-    data = response.json()
+    try:
+        data = response.json()
+    except ValueError as error:
+        raise RuntimeError(
+            f"Bitrix REST вернул не-JSON ответ (HTTP {response.status_code}): {response.text!r}"
+        ) from error
+
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"Bitrix REST вернул неожиданный ответ: {data!r} "
+            f"(HTTP {response.status_code})"
+        )
+
     if "error" in data:
         raise RuntimeError(
             f"{data['error']}: {data.get('error_description', '')}"
@@ -791,7 +804,8 @@ class App:
                 ),
             )
         except Exception as error:
-            self.root.after(0, lambda: messagebox.showerror("Ошибка", repr(error)))
+            error_text = f"{type(error).__name__}: {error}\n\n{traceback.format_exc()}"
+            self.root.after(0, lambda msg=error_text: messagebox.showerror("Ошибка", msg))
 
     def create_pipeline_snapshot(self):
         threading.Thread(target=self._create_pipeline_snapshot_worker, daemon=True).start()
@@ -881,7 +895,10 @@ class App:
                 f"задачи «Ответить кандидату» {deleted_tasks}. Готово к новому запуску."
             )
         except Exception as error:
-            messagebox.showerror("Ошибка", str(error))
+            messagebox.showerror(
+                "Ошибка",
+                f"{type(error).__name__}: {error}\n\n{traceback.format_exc()}",
+            )
 
 
 if __name__ == "__main__":

@@ -199,14 +199,22 @@ def stage_map(category_id):
 
 
 def create_sla_candidate(category_id, user_id, stages, index):
-    name, vacancy, priority, deadline_delta, answered = WORKDAY_SCENARIO[index]
+    scenario = WORKDAY_SCENARIO[index]
+    name = scenario["name"]
+    vacancy = scenario["vacancy"]
+    priority = scenario["priority"]
+    deadline_delta = scenario["delta"]
+    answered = scenario["answered"]
+    scenario_stage = scenario["stage"]
+    next_step = scenario["next"]
+    blocker = scenario["blocker"]
+    scenario_comment = scenario["comment"]
 
     now = datetime.now()
     deadline = now + timedelta(minutes=deadline_delta)
     inbound = deadline - timedelta(hours=2)
     response = inbound + timedelta(minutes=35) if answered else None
 
-    # Первые 6 — именно SLA-очередь. Остальные распределяются по рабочим стадиям.
     stage_name = scenario_stage
     stage_id = stages[stage_name]
 
@@ -247,10 +255,9 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response.isoformat(timespec="seconds") if response else "",
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["PRIORITY"]: priority,
-        DEAL_FIELD_CODES["BLOCKER"]: "Не ответил кандидату" if not answered else "В работе",
-        DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату" if not answered else "Следующий шаг",
-        # Для демо «Следующее действие» должно совпадать со SLA-дедлайном:
-        # просрочено для первых кандидатов, будущее для остальных.
+        DEAL_FIELD_CODES["BLOCKER"]: blocker,
+        DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
+        # Для рабочего дня это время следующего действия.
         DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
     }
 
@@ -335,8 +342,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 "ENTITY_ID": deal_id,
                 "ENTITY_TYPE": "deal",
                 "COMMENT": (
-                    f"[SLA DEMO] Входящий контакт: кандидат спрашивает про «{vacancy}»."
-                    + (" Рекрутер ответил." if answered else " Ответ не отправлен.")
+                    f"[WORKDAY DEMO] {scenario_comment}"
                 ),
             }
         },
@@ -466,8 +472,8 @@ class App:
         ttk.Label(
             frame,
             text=(
-                "1–6: очередь ответа\n"
-                "7–18: квалификация → интервью → решение → документы → клиент → выход"
+                "1–6: входящие и SLA\n"
+                "7–30: квалификация → интервью → документы → заказчик → выход"
             ),
             justify="left",
         ).pack(anchor="w", pady=8)
@@ -549,13 +555,15 @@ class App:
 
         self.preview = tk.StringVar(
             value=(
-                "Первые 6:\n"
-                "🔴 Алексей — Высокий — просрочено\n"
-                "🔴 Марина — Высокий — просрочено\n"
-                "🟠 Дмитрий — Средний — 25 мин\n"
-                "🟡 Ольга — Высокий — 70 мин\n"
-                "🟡 Сергей — Низкий — 115 мин\n"
-                "🟢 Ирина — Средний — уже ответили"
+                "Рабочий день:\n"
+                "🔴 3 — просроченный SLA\n"
+                "🟠 3 — SLA скоро истекает\n"
+                "📞 4 — квалификация / нет ответа\n"
+                "🎯 4 — интервью сегодня\n"
+                "📄 4 — документы\n"
+                "🤝 4 — ждём заказчика\n"
+                "🚀 3 — выход на работу\n"
+                "⏳ 4 — ждём решение"
             )
         )
         ttk.Label(

@@ -348,3 +348,7 @@ def setup() -> int:
     configure_deal_card(client, pipeline_id)
 
     return pipeline_id
+
+
+if __name__ == "__main__":
+    setup()

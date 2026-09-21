@@ -698,11 +698,16 @@ def delete_demo(category_id):
             },
         )
         items = data.get("items", [])
+        sla_presentation_titles = {
+            f'{case["name"]} {case["surname"]} · {case["vacancy"]}'
+            for case in SLA_PRESENTATION_SCENARIO
+        }
         targets = [
             item for item in items
             if item.get("comments") == DEMO_COMMENT
-            or str(item.get("title", "")).startswith("[DEMO]")
             or "SLA DEMO" in str(item.get("comments", ""))
+            or str(item.get("title", "")).startswith("[DEMO]")
+            or str(item.get("title", "")) in sla_presentation_titles
             or "StaffFlow Health Check" in str(item.get("title", ""))
             or "Открытая линия" in str(item.get("title", ""))
         ]

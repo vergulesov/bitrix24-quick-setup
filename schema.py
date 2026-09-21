@@ -30,7 +30,7 @@ DEAL_FIELD_SPECS: list[dict[str, Any]] = [
         "values": ["Высокий", "Средний", "Низкий"],
     },
     {
-        "field_name": "ACTION_PRIORITY", "label": "Приоритет действия", "type": "enumeration", "sort": 235,
+        "field_name": "ACTION_PRIORITY", "label": "Срочность", "type": "enumeration", "sort": 235,
         "values": ["🔴 Сейчас", "🟠 Скоро", "🟢 Не сейчас"],
     },
     {

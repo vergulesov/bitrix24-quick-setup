@@ -297,6 +297,26 @@ def save_sla_status(deal_id: int, value: str) -> None:
     """SLA_STATUS больше не используется: источник истины — RESPONSE_DEADLINE."""
     return
 
+def save_urgency(deal_id: int, value: str) -> None:
+    """Записывает срочность через crm.deal.update и проверяет результат."""
+    call(
+        "crm.deal.update",
+        {
+            "id": deal_id,
+            "fields": {
+                DEAL_FIELD_CODES["URGENCY"]: value,
+            },
+        },
+    )
+    check = call("crm.deal.get", {"id": deal_id})
+    saved = (check or {}).get(DEAL_FIELD_CODES["URGENCY"])
+    if saved != value:
+        raise RuntimeError(
+            f"Bitrix не сохранил срочность для сделки {deal_id}: "
+            f"ожидалось {value!r}, получено {saved!r}"
+        )
+
+
 def create_sla_candidate(category_id, user_id, stages, index):
     scenario = WORKDAY_SCENARIO[index]
     name = scenario["name"]
@@ -435,6 +455,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
         )
     time.sleep(2)
 
+    save_urgency(deal_id, action_priority)
 
     call(
         "crm.timeline.comment.add",

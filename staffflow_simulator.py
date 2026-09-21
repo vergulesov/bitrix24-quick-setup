@@ -282,64 +282,9 @@ def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:
 _SLA_FIELD_CODE = None
 
 
-def get_sla_field_code() -> str:
-    """Находит фактический код поля SLA на портале, а не предполагает его."""
-    global _SLA_FIELD_CODE
-    if _SLA_FIELD_CODE:
-        return _SLA_FIELD_CODE
-
-    fields = call("crm.deal.userfield.list", {
-        "filter": {},
-        "order": {"SORT": "ASC", "ID": "ASC"},
-    }) or []
-
-    for field in fields:
-        field_name = str(field.get("FIELD_NAME", ""))
-        label = field.get("EDIT_FORM_LABEL") or {}
-        ru_label = label.get("ru") if isinstance(label, dict) else str(label)
-        if field_name == DEAL_FIELD_CODES["SLA_STATUS"] or field_name.endswith("_SLA_STATUS") or ru_label == "SLA":
-            _SLA_FIELD_CODE = field_name
-            return field_name
-
-    raise RuntimeError(
-        "Поле SLA не найдено в CRM. Запусти setup.py, чтобы создать поле «SLA»."
-    )
-
-
 def save_sla_status(deal_id: int, value: str) -> None:
-    """Записывает SLA в существующее пользовательское поле сделки."""
-    field_code = get_sla_field_code()
-
-    # Используем deal.update: для уже существующего пользовательского поля
-    # это самый прямой путь без преобразований universal CRM API.
-    result = call(
-        "crm.deal.update",
-        {
-            "id": deal_id,
-            "fields": {
-                field_code: value,
-            },
-        },
-    )
-    if result is False:
-        raise RuntimeError(
-            f"Bitrix не подтвердил обновление SLA для сделки {deal_id}: "
-            f"поле {field_code!r}"
-        )
-
-    check = call(
-        "crm.deal.get",
-        {
-            "id": deal_id,
-        },
-    )
-    saved = (check or {}).get(field_code)
-    if saved != value:
-        raise RuntimeError(
-            f"Bitrix не сохранил SLA для сделки {deal_id}: "
-            f"поле {field_code!r}; ожидалось {value!r}, получено {saved!r}"
-        )
-
+    """SLA_STATUS больше не используется: источник истины — RESPONSE_DEADLINE."""
+    return
 
 def create_sla_candidate(category_id, user_id, stages, index):
     scenario = WORKDAY_SCENARIO[index]
@@ -380,7 +325,6 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response.isoformat(timespec="seconds") if response else "",
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-        DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(deadline, now),
         DEAL_FIELD_CODES["PRIORITY"]: priority,
         DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
         DEAL_FIELD_CODES["BLOCKER"]: blocker,
@@ -432,7 +376,6 @@ def create_sla_candidate(category_id, user_id, stages, index):
                     DEAL_FIELD_CODES["VACANCY"]: vacancy,
                     DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(deadline, now),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: priority,
                     DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
@@ -441,7 +384,6 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 },
             },
         )
-        save_sla_status(deal_id, sla_status_text(deadline, now))
     else:
         deal = call(
             "crm.item.add",
@@ -469,17 +411,11 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 "useOriginalUfNames": "Y",
                 "fields": {
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["SLA_STATUS"]: (
-                        f"🔴 ПРОСРОЧЕНО · {abs(deadline_delta)} мин"
-                        if deadline_delta < 0
-                        else f"🟢 ОСТАЛОСЬ · {deadline_delta} мин"
-                    ),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                 },
             },
         )
 
-        verify_sla_status(deal_id, sla_status_text(deadline, now))
         
         call(
             "crm.item.update",

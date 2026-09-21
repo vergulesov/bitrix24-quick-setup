@@ -579,7 +579,7 @@ def delete_demo(category_id):
             "crm.item.list",
             {
                 "entityTypeId": 2,
-                "select": ["id", "comments", "title"],
+                "select": ["id", "comments", "title", "contactIds"],
                 "filter": {"categoryId": category_id},
             },
         )
@@ -590,12 +590,25 @@ def delete_demo(category_id):
             or str(item.get("title", "")).startswith("[DEMO]")
             or "SLA DEMO" in str(item.get("comments", ""))
             or "StaffFlow Health Check" in str(item.get("title", ""))
+            or "Открытая линия" in str(item.get("title", ""))
         ]
 
         if not targets:
             break
 
         for item in targets:
+            # Legacy incoming deals могли остаться без DEMO_COMMENT.
+            # Перед удалением сделки сохраняем связанные контакты:
+            # так чистим именно хвост Open Channel, а не все контакты CRM.
+            for contact_id in item.get("contactIds", []) or []:
+                try:
+                    call(
+                        "crm.item.delete",
+                        {"entityTypeId": 3, "id": int(contact_id)},
+                    )
+                except Exception:
+                    pass
+
             call(
                 "crm.item.delete",
                 {"entityTypeId": 2, "id": item["id"]},

@@ -324,6 +324,23 @@ def create_sla_candidate(category_id, user_id, stages, index):
         recent = find_recent_deal(category_id, name)
         deal_id = int(recent["id"])
 
+        # Open Channel мог автоматически создать/привязать контакт.
+        # Помечаем его тем же демо-маркером, чтобы «Удалить демо-день»
+        # чистил и контакты, созданные реальным incoming-потоком.
+        contact_ids = recent.get("contactIds", []) or []
+        for contact_id in contact_ids:
+            call(
+                "crm.item.update",
+                {
+                    "entityTypeId": 3,
+                    "id": int(contact_id),
+                    "useOriginalUfNames": "Y",
+                    "fields": {
+                        "comments": "[DEMO] SLA simulator contact",
+                    },
+                },
+            )
+
         # Open Channel уже создал сделку и запустил штатные роботы.
         # После этого накладываем демо-состояние рабочего дня поверх реального входящего.
         call(

@@ -269,6 +269,31 @@ def find_recent_deal(category_id, name, timeout=15):
     raise RuntimeError(f"Open Channel отправил сообщение, но CRM-сделка для «{name}» не появилась.")
 
 
+def sla_status_text(deadline_delta: int) -> str:
+    return (
+        f"🔴 ПРОСРОЧЕНО · {abs(deadline_delta)} мин"
+        if deadline_delta < 0
+        else f"🟢 ОСТАЛОСЬ · {deadline_delta} мин"
+    )
+
+
+def verify_sla_status(deal_id: int, expected: str) -> None:
+    check = call(
+        "crm.item.get",
+        {
+            "entityTypeId": 2,
+            "id": deal_id,
+            "useOriginalUfNames": "Y",
+        },
+    )
+    saved = check.get("item", {}).get(DEAL_FIELD_CODES["SLA_STATUS"])
+    if saved != expected:
+        raise RuntimeError(
+            f"Bitrix не сохранил SLA для сделки {deal_id}: "
+            f"ожидалось {expected!r}, получено {saved!r}"
+        )
+
+
 def create_sla_candidate(category_id, user_id, stages, index):
     scenario = WORKDAY_SCENARIO[index]
     name = scenario["name"]
@@ -305,11 +330,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response.isoformat(timespec="seconds") if response else "",
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-        DEAL_FIELD_CODES["SLA_STATUS"]: (
-            f"🔴 ПРОСРОЧЕНО · {abs(deadline_delta)} мин"
-            if deadline_delta < 0
-            else f"🟢 ОСТАЛОСЬ · {deadline_delta} мин"
-        ),
+        DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(deadline_delta),
         DEAL_FIELD_CODES["PRIORITY"]: priority,
         DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
         DEAL_FIELD_CODES["BLOCKER"]: blocker,
@@ -374,6 +395,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 },
             },
         )
+        verify_sla_status(deal_id, sla_status_text(deadline_delta))
     else:
         deal = call(
             "crm.item.add",
@@ -411,17 +433,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
             },
         )
 
-        check = call(
-            "crm.item.get",
-            {
-                "entityTypeId": 2,
-                "id": deal_id,
-                "useOriginalUfNames": "Y",
-            },
-        )
-        saved = check.get("item", {}).get(DEAL_FIELD_CODES["RESPONSE_DEADLINE"])
-        if not saved:
-            raise RuntimeError("Bitrix не сохранил демо-SLA до перевода в «Новый кандидат».")
+        verify_sla_status(deal_id, sla_status_text(deadline_delta))
         
         call(
             "crm.item.update",
@@ -471,6 +483,7 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             DEAL_FIELD_CODES["BLOCKER"]: scenario["blocker"],
             DEAL_FIELD_CODES["NEXT_STEP"]: scenario["next"],
             DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(scenario["delta"]),
             DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
         }
         deal = call(
@@ -489,6 +502,7 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             },
         )
         deal_id = int(deal["item"]["id"])
+        verify_sla_status(deal_id, sla_status_text(scenario["delta"]))
         call(
             "crm.timeline.comment.add",
             {

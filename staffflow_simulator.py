@@ -279,29 +279,62 @@ def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:
     return f"🟢 ОСТАЛОСЬ · {delta_minutes} мин"
 
 
+_SLA_FIELD_CODE = None
+
+
+def get_sla_field_code() -> str:
+    """Находит фактический код поля SLA на портале, а не предполагает его."""
+    global _SLA_FIELD_CODE
+    if _SLA_FIELD_CODE:
+        return _SLA_FIELD_CODE
+
+    fields = call("crm.deal.userfield.list", {
+        "filter": {},
+        "order": {"SORT": "ASC", "ID": "ASC"},
+    }) or []
+
+    for field in fields:
+        field_name = str(field.get("FIELD_NAME", ""))
+        label = field.get("EDIT_FORM_LABEL") or {}
+        ru_label = label.get("ru") if isinstance(label, dict) else str(label)
+        if field_name == DEAL_FIELD_CODES["SLA_STATUS"] or field_name.endswith("_SLA_STATUS") or ru_label == "SLA":
+            _SLA_FIELD_CODE = field_name
+            return field_name
+
+    raise RuntimeError(
+        "Поле SLA не найдено в CRM. Запусти setup.py, чтобы создать поле «SLA»."
+    )
+
+
 def save_sla_status(deal_id: int, value: str) -> None:
-    """Записывает SLA через штатный метод сделки и сразу проверяет значение."""
+    """Записывает SLA через crm.item.update с фактическим кодом поля."""
+    field_code = get_sla_field_code()
+
     call(
-        "crm.deal.update",
+        "crm.item.update",
         {
+            "entityTypeId": 2,
             "id": deal_id,
+            "useOriginalUfNames": "Y",
             "fields": {
-                DEAL_FIELD_CODES["SLA_STATUS"]: value,
+                field_code: value,
             },
         },
     )
 
     check = call(
-        "crm.deal.get",
+        "crm.item.get",
         {
+            "entityTypeId": 2,
             "id": deal_id,
+            "useOriginalUfNames": "Y",
         },
     )
-    saved = (check or {}).get(DEAL_FIELD_CODES["SLA_STATUS"])
+    saved = (check or {}).get("item", {}).get(field_code)
     if saved != value:
         raise RuntimeError(
             f"Bitrix не сохранил SLA для сделки {deal_id}: "
-            f"ожидалось {value!r}, получено {saved!r}"
+            f"поле {field_code!r}; ожидалось {value!r}, получено {saved!r}"
         )
 
 

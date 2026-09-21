@@ -259,9 +259,20 @@ def ensure_deal_fields(client: BitrixClient) -> None:
     for spec in DEAL_FIELD_SPECS:
         field_name = f"UF_CRM_{spec['field_name']}"
         if field_name in existing:
+            field = existing[field_name]
+            update_fields = {
+                "SHOW_IN_LIST": "Y" if spec["field_name"] in {
+                    "ACTION_PRIORITY",
+                    "VACANCY",
+                    "RESPONSE_DEADLINE",
+                    "NEXT_STEP",
+                } else "N",
+                "EDIT_FORM_LABEL": {"ru": spec["label"]},
+                "LIST_COLUMN_LABEL": {"ru": spec["label"]},
+                "LIST_FILTER_LABEL": {"ru": spec["label"]},
+            }
             if spec["field_name"] == "ACTION_PRIORITY":
-                field = existing[field_name]
-                list_values = [
+                update_fields["LIST"] = [
                     {
                         "VALUE": value,
                         "SORT": (index + 1) * 100,
@@ -270,10 +281,7 @@ def ensure_deal_fields(client: BitrixClient) -> None:
                     }
                     for index, value in enumerate(spec["values"])
                 ]
-                client.update_deal_userfield(
-                    int(field["ID"]),
-                    {"LIST": list_values},
-                )
+            client.update_deal_userfield(int(field["ID"]), update_fields)
             continue
 
         field_id = client.add_deal_userfield(_field_payload(spec))
@@ -315,14 +323,9 @@ def configure_deal_card(
             "type": "section",
             "elements": [
                 {"name": fields["LAST_INBOUND_AT"], "optionFlags": 1},
-                {"name": fields["LAST_RESPONSE_AT"], "optionFlags": 1},
                 {"name": fields["RESPONSE_DEADLINE"], "optionFlags": 1},
-                {"name": fields["SLA_STATUS"], "optionFlags": 1},
-                {"name": fields["PRIORITY"], "optionFlags": 1},
                 {"name": fields["ACTION_PRIORITY"], "optionFlags": 1},
-                {"name": fields["BLOCKER"], "optionFlags": 1},
                 {"name": fields["NEXT_STEP"], "optionFlags": 1},
-                {"name": fields["NEXT_ACTION_AT"], "optionFlags": 1},
             ],
         },
         {

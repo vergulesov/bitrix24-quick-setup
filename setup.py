@@ -271,16 +271,6 @@ def ensure_deal_fields(client: BitrixClient) -> None:
                 "LIST_COLUMN_LABEL": {"ru": spec["label"]},
                 "LIST_FILTER_LABEL": {"ru": spec["label"]},
             }
-            if spec["field_name"] == "ACTION_PRIORITY":
-                update_fields["LIST"] = [
-                    {
-                        "VALUE": value,
-                        "SORT": (index + 1) * 100,
-                        "DEF": "N",
-                        "XML_ID": f"{spec['field_name']}_{index + 1}",
-                    }
-                    for index, value in enumerate(spec["values"])
-                ]
             client.update_deal_userfield(int(field["ID"]), update_fields)
             continue
 

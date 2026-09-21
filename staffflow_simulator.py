@@ -425,7 +425,7 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
     created = 0
     for i in range(min(count, len(candidates))):
         scenario = candidates[i]
-        name = f"{scenario['name']} — Срез"
+        name = f"{scenario['name']} — Demo"
         deadline = datetime.now() + timedelta(minutes=scenario["delta"])
         fields = {
             DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,

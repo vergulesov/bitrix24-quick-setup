@@ -511,6 +511,49 @@ def delete_demo_contacts():
     return deleted
 
 
+def tag_latest_health_check_deal(category_id):
+    """Помечает сделку, созданную реальным incoming health-check."""
+    data = call(
+        "crm.item.list",
+        {
+            "entityTypeId": 2,
+            "select": ["id", "comments", "title", "categoryId"],
+            "filter": {"categoryId": category_id},
+            "order": {"id": "DESC"},
+        },
+    )
+    items = data.get("items", [])
+    if not items:
+        raise RuntimeError("Health-check создал сделку, но её не удалось найти в CRM.")
+
+    deal_id = int(items[0]["id"])
+    current_comments = str(items[0].get("comments", "") or "")
+    marker = "[STAFFFLOW HEALTH CHECK]"
+    comments = (
+        current_comments
+        if marker in current_comments
+        else f"{current_comments}\\n{marker}".strip()
+    )
+    if DEMO_COMMENT not in comments:
+        comments = f"{comments}\\n{DEMO_COMMENT}".strip()
+
+    call(
+        "crm.item.update",
+        {
+            "entityTypeId": 2,
+            "id": deal_id,
+            "fields": {"comments": comments},
+        },
+    )
+    return deal_id
+
+
+def clear_demo_unread_dialogs():
+    """Сбрасывает unread-счётчик после тестовых incoming-сообщений."""
+    call("im.dialog.read.all", {})
+    return True
+
+
 def delete_demo(category_id):
     total = 0
 
@@ -744,6 +787,10 @@ class App:
                     timeout=12,
                 )
                 if after > before:
+                    # Health-check создаёт реальную CRM-сделку. Помечаем её
+                    # тем же демо-маркером, чтобы кнопка очистки не оставляла
+                    # после проверки «висячие» сделки.
+                    tag_latest_health_check_deal(self.pipeline_id)
                     results.append(
                         f"🟢 Incoming → Open Channel → CRM — OK "
                         f"(сделок было {before}, стало {after})"
@@ -888,11 +935,19 @@ class App:
             deleted = delete_demo(self.pipeline_id)
             deleted_contacts = delete_demo_contacts()
             deleted_tasks = delete_demo_tasks()
+
+            unread_status = "непрочитанные диалоги сброшены"
+            try:
+                clear_demo_unread_dialogs()
+            except Exception as error:
+                unread_status = f"непрочитанные диалоги НЕ сброшены: {error}"
+
             self.scenario_index = 0
             self.created = 0
             self.status.set(
                 f"Удалено: сделки {deleted}, контакты {deleted_contacts}, "
-                f"задачи «Ответить кандидату» {deleted_tasks}. Готово к новому запуску."
+                f"задачи «Ответить кандидату» {deleted_tasks}; "
+                f"{unread_status}. Готово к новому запуску."
             )
         except Exception as error:
             messagebox.showerror(

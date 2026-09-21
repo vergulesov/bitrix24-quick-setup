@@ -104,13 +104,6 @@ def call(method, params=None):
     return data.get("result")
 
 
-def get_current_user_id():
-    result = call("user.current")
-    if not isinstance(result, dict) or not result.get("ID"):
-        raise RuntimeError("Не удалось определить текущего пользователя Bitrix.")
-    return int(result["ID"])
-
-
 def get_pipeline():
     result = call("crm.category.list", {"entityTypeId": 2})
     categories = result.get("categories", []) if isinstance(result, dict) else []
@@ -130,16 +123,155 @@ def get_stages(category_id):
     ) or []
 
 
+def get_current_user_id():
+    return int(call("user.current")["ID"])
+
+
+def check_connector():
+    response = requests.get(CONNECTOR_URL.rstrip("/"), timeout=8)
+    response.raise_for_status()
+    return True
+
+
+def check_openline():
+    # imconnector.status is an application-context method and cannot be
+    # checked through the personal webhook used by this simulator.
+    return {
+        "CONFIGURED": None,
+        "STATUS": None,
+        "NOTE": "Проверка фактической доставки выполняется через /send + CRM."
+    }
+
+
+def send_openline_test():
+    if not CONNECTOR_TOKEN:
+        raise RuntimeError(
+            "Не задан STAFFFLOW_SEND_TOKEN в .env. "
+            "Добавь локально токен /send с VPS; в чат его не присылай."
+        )
+
+    stamp = int(time.time())
+    payload = {
+        "token": CONNECTOR_TOKEN,
+        "user_id": f"health-user-{stamp}",
+        "user_name": "StaffFlow Health Check",
+        "message_id": f"health-msg-{stamp}",
+        "chat_id": f"health-chat-{stamp}",
+        "chat_name": "StaffFlow Health Check",
+        "text": "StaffFlow health-check: входящее тестовое сообщение.",
+    }
+    send_url = CONNECTOR_URL.rstrip("/") + "/send"
+    response = requests.post(
+        send_url,
+        json=payload,
+        timeout=20,
+    )
+    if response.status_code < 200 or response.status_code >= 300:
+        raise RuntimeError(
+            f"Connector /send вернул HTTP {response.status_code}: "
+            f"{response.text!r}"
+        )
+    # Connector может вернуть пустой/null body при успешном HTTP 2xx.
+    # Для симулятора важен сам факт успешной доставки запроса.
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+
+    if isinstance(data, dict) and data.get("ok") is False:
+        raise RuntimeError(f"Connector /send вернул ошибку: {data!r}")
+    return data or {"ok": True, "status_code": response.status_code}
+
+
+def count_pipeline_deals(category_id):
+    data = call(
+        "crm.item.list",
+        {
+            "entityTypeId": 2,
+            "select": ["id", "title"],
+            "filter": {"categoryId": category_id},
+        },
+    )
+    return len(data.get("items", []))
+
+
+def wait_for_new_pipeline_deal(category_id, before_count, timeout=12):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        count = count_pipeline_deals(category_id)
+        if count > before_count:
+            return count
+        time.sleep(1)
+    return count_pipeline_deals(category_id)
+
+
 def stage_map(category_id):
     return {
         item["NAME"]: item["STATUS_ID"]
         for item in get_stages(category_id)
-        if item.get("NAME") and item.get("STATUS_ID")
+        if item.get("NAME")
     }
 
 
+def send_workday_incoming(name, vacancy, index):
+    """Создаёт настоящее входящее сообщение через Open Channel."""
+    if not CONNECTOR_TOKEN:
+        raise RuntimeError("Для входящего демо не задан STAFFFLOW_SEND_TOKEN в .env.")
+
+    stamp = int(time.time() * 1000)
+    payload = {
+        "token": CONNECTOR_TOKEN,
+        "user_id": f"workday-demo-{index + 1}-{stamp}",
+        "user_name": name,
+        "message_id": f"workday-msg-{index + 1}-{stamp}",
+        "chat_id": f"workday-chat-{index + 1}-{stamp}",
+        "chat_name": f"{name} — {vacancy}",
+        "text": f"Здравствуйте! Интересует вакансия «{vacancy}». Подскажите, пожалуйста, условия и график.",
+    }
+    response = requests.post(
+        CONNECTOR_URL.rstrip("/") + "/send",
+        json=payload,
+        timeout=20,
+    )
+    if response.status_code < 200 or response.status_code >= 300:
+        raise RuntimeError(
+            f"Connector /send вернул HTTP {response.status_code}: "
+            f"{response.text!r}"
+        )
+    # Connector может вернуть пустой/null body при успешном HTTP 2xx.
+    # Для симулятора важен сам факт успешной доставки запроса.
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+
+    if isinstance(data, dict) and data.get("ok") is False:
+        raise RuntimeError(f"Connector /send вернул ошибку: {data!r}")
+    return data or {"ok": True, "status_code": response.status_code}
+
+
+def find_recent_deal(category_id, name, timeout=15):
+    """Ждём сделку, которую Open Channel создаёт автоматически."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        data = call(
+            "crm.item.list",
+            {
+                "entityTypeId": 2,
+                "select": ["id", "title", "categoryId", "stageId", "contactIds", "createdTime"],
+                "filter": {"categoryId": category_id},
+                "order": {"id": "DESC"},
+            },
+        )
+        items = (data or {}).get("items", [])
+        if items:
+            return items[0]
+        time.sleep(1)
+    raise RuntimeError(f"Open Channel отправил сообщение, но CRM-сделка для «{name}» не появилась.")
+
+
 def urgency_level(deadline: datetime, now: datetime | None = None) -> str:
-    """Три уровня срочности от времени до срока реакции."""
+    """Три уровня срочности: сейчас, скоро, не сейчас."""
     now = now or datetime.now()
     minutes = (deadline - now).total_seconds() / 60
     if minutes <= 30:
@@ -148,6 +280,22 @@ def urgency_level(deadline: datetime, now: datetime | None = None) -> str:
         return "🟠 Скоро"
     return "🟢 Не сейчас"
 
+
+def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:
+    """Человеческий статус SLA, рассчитанный от фактического дедлайна."""
+    now = now or datetime.now()
+    delta_minutes = round((deadline - now).total_seconds() / 60)
+    if delta_minutes < 0:
+        return f"🔴 ПРОСРОЧЕНО · {abs(delta_minutes)} мин"
+    return f"🟢 ОСТАЛОСЬ · {delta_minutes} мин"
+
+
+_SLA_FIELD_CODE = None
+
+
+def save_sla_status(deal_id: int, value: str) -> None:
+    """SLA_STATUS больше не используется: источник истины — RESPONSE_DEADLINE."""
+    return
 
 def create_sla_candidate(category_id, user_id, stages, index):
     scenario = WORKDAY_SCENARIO[index]
@@ -322,7 +470,7 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             DEAL_FIELD_CODES["DESIRED_POSITION"]: scenario["vacancy"],
             DEAL_FIELD_CODES["VACANCY"]: scenario["vacancy"],
             DEAL_FIELD_CODES["PRIORITY"]: scenario["priority"],
-            DEAL_FIELD_CODES["ACTION_PRIORITY"]: (
+            DEAL_FIELD_CODES["URGENCY"]: (
                 urgency_level(deadline, now)
             ),
             DEAL_FIELD_CODES["BLOCKER"]: scenario["blocker"],

@@ -259,6 +259,21 @@ def ensure_deal_fields(client: BitrixClient) -> None:
     for spec in DEAL_FIELD_SPECS:
         field_name = f"UF_CRM_{spec['field_name']}"
         if field_name in existing:
+            if spec["field_name"] == "ACTION_PRIORITY":
+                field = existing[field_name]
+                list_values = [
+                    {
+                        "VALUE": value,
+                        "SORT": (index + 1) * 100,
+                        "DEF": "N",
+                        "XML_ID": f"{spec['field_name']}_{index + 1}",
+                    }
+                    for index, value in enumerate(spec["values"])
+                ]
+                client.update_deal_userfield(
+                    int(field["ID"]),
+                    {"LIST": list_values},
+                )
             continue
 
         field_id = client.add_deal_userfield(_field_payload(spec))

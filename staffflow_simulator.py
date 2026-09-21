@@ -24,6 +24,7 @@ CONNECTOR_URL = os.getenv("STAFFFLOW_CONNECTOR_URL", "https://195-19-195-13.ssli
 CONNECTOR_TOKEN = os.getenv("STAFFFLOW_SEND_TOKEN", "")
 CONNECTOR_ID = "staffflow_test"
 OPEN_LINE_ID = 1
+SLA_MINUTES = 120
 
 WORKDAY_SCENARIO = [
     {"name":"Алексей","vacancy":"Водитель","priority":"Высокий","stage":"Новый кандидат","delta":-90,"answered":False,"next":"Ответить кандидату","blocker":"Нет ответа кандидату","comment":"Новый входящий. SLA уже просрочен."},
@@ -269,12 +270,13 @@ def find_recent_deal(category_id, name, timeout=15):
     raise RuntimeError(f"Open Channel отправил сообщение, но CRM-сделка для «{name}» не появилась.")
 
 
-def sla_status_text(deadline_delta: int) -> str:
-    return (
-        f"🔴 ПРОСРОЧЕНО · {abs(deadline_delta)} мин"
-        if deadline_delta < 0
-        else f"🟢 ОСТАЛОСЬ · {deadline_delta} мин"
-    )
+def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:
+    """Человеческий статус SLA, рассчитанный от фактического дедлайна."""
+    now = now or datetime.now()
+    delta_minutes = round((deadline - now).total_seconds() / 60)
+    if delta_minutes < 0:
+        return f"🔴 ПРОСРОЧЕНО · {abs(delta_minutes)} мин"
+    return f"🟢 ОСТАЛОСЬ · {delta_minutes} мин"
 
 
 def verify_sla_status(deal_id: int, expected: str) -> None:
@@ -306,9 +308,12 @@ def create_sla_candidate(category_id, user_id, stages, index):
     blocker = scenario["blocker"]
     scenario_comment = scenario["comment"]
 
+    # delta — только демо-смещение относительно текущего момента.
+    # Источник SLA всё равно строится по правильной цепочке:
+    # LAST_INBOUND_AT + SLA_MINUTES = RESPONSE_DEADLINE.
     now = datetime.now()
-    deadline = now + timedelta(minutes=deadline_delta)
-    inbound = deadline - timedelta(hours=2)
+    inbound = now - timedelta(minutes=SLA_MINUTES - deadline_delta)
+    deadline = inbound + timedelta(minutes=SLA_MINUTES)
     response = inbound + timedelta(minutes=35) if answered else None
 
     stage_name = scenario_stage
@@ -330,7 +335,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response.isoformat(timespec="seconds") if response else "",
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-        DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(deadline_delta),
+        DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(deadline, now),
         DEAL_FIELD_CODES["PRIORITY"]: priority,
         DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
         DEAL_FIELD_CODES["BLOCKER"]: blocker,
@@ -382,11 +387,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                     DEAL_FIELD_CODES["VACANCY"]: vacancy,
                     DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["SLA_STATUS"]: (
-                        f"🔴 ПРОСРОЧЕНО · {abs(deadline_delta)} мин"
-                        if deadline_delta < 0
-                        else f"🟢 ОСТАЛОСЬ · {deadline_delta} мин"
-                    ),
+                    DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(deadline, now),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: priority,
                     DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
@@ -395,7 +396,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 },
             },
         )
-        verify_sla_status(deal_id, sla_status_text(deadline_delta))
+        verify_sla_status(deal_id, sla_status_text(deadline, now))
     else:
         deal = call(
             "crm.item.add",
@@ -470,7 +471,11 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
     for i in range(min(count, len(candidates))):
         scenario = candidates[i]
         name = f"{scenario['name']} — Demo"
-        deadline = datetime.now() + timedelta(minutes=scenario["delta"])
+        # В срезе используем ту же SLA-модель:
+        # LAST_INBOUND_AT + SLA_MINUTES = RESPONSE_DEADLINE.
+        now = datetime.now()
+        inbound = now - timedelta(minutes=SLA_MINUTES - scenario["delta"])
+        deadline = inbound + timedelta(minutes=SLA_MINUTES)
         fields = {
             DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: "Демо",
@@ -482,8 +487,9 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             ),
             DEAL_FIELD_CODES["BLOCKER"]: scenario["blocker"],
             DEAL_FIELD_CODES["NEXT_STEP"]: scenario["next"],
+            DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-            DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(scenario["delta"]),
+            DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(deadline, now),
             DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
         }
         deal = call(
@@ -502,7 +508,7 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             },
         )
         deal_id = int(deal["item"]["id"])
-        verify_sla_status(deal_id, sla_status_text(scenario["delta"]))
+        verify_sla_status(deal_id, sla_status_text(deadline, now))
         call(
             "crm.timeline.comment.add",
             {

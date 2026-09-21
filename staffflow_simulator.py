@@ -434,7 +434,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
             },
         )
 
-        verify_sla_status(deal_id, sla_status_text(deadline_delta))
+        verify_sla_status(deal_id, sla_status_text(deadline, now))
         
         call(
             "crm.item.update",

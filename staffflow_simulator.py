@@ -307,30 +307,33 @@ def get_sla_field_code() -> str:
 
 
 def save_sla_status(deal_id: int, value: str) -> None:
-    """Записывает SLA через crm.item.update с фактическим кодом поля."""
+    """Записывает SLA в существующее пользовательское поле сделки."""
     field_code = get_sla_field_code()
 
-    call(
-        "crm.item.update",
+    # Используем deal.update: для уже существующего пользовательского поля
+    # это самый прямой путь без преобразований universal CRM API.
+    result = call(
+        "crm.deal.update",
         {
-            "entityTypeId": 2,
             "id": deal_id,
-            "useOriginalUfNames": "Y",
             "fields": {
                 field_code: value,
             },
         },
     )
+    if result is False:
+        raise RuntimeError(
+            f"Bitrix не подтвердил обновление SLA для сделки {deal_id}: "
+            f"поле {field_code!r}"
+        )
 
     check = call(
-        "crm.item.get",
+        "crm.deal.get",
         {
-            "entityTypeId": 2,
             "id": deal_id,
-            "useOriginalUfNames": "Y",
         },
     )
-    saved = (check or {}).get("item", {}).get(field_code)
+    saved = (check or {}).get(field_code)
     if saved != value:
         raise RuntimeError(
             f"Bitrix не сохранил SLA для сделки {deal_id}: "

@@ -314,7 +314,7 @@ def configure_deal_card(
             "elements": [
                 {"name": fields["LAST_INBOUND_AT"], "optionFlags": 1},
                 {"name": fields["RESPONSE_DEADLINE"], "optionFlags": 1},
-                {"name": fields["ACTION_PRIORITY"], "optionFlags": 1},
+                {"name": fields["URGENCY"], "optionFlags": 1},
                 {"name": fields["NEXT_STEP"], "optionFlags": 1},
             ],
         },

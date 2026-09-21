@@ -65,6 +65,78 @@ WORKDAY_SCENARIO = [
 ]
 
 
+
+# Четыре контрольные точки SLA для презентации:
+# +3ч -> Не срочно, +1ч30м -> Скоро, +30м -> Сейчас, -10м -> Просрочено.
+SLA_PRESENTATION_SCENARIO = [
+    {"name": "Иван", "surname": "Петров", "vacancy": "Водитель", "priority": "Высокий", "delta": 180},
+    {"name": "Марина", "surname": "Соколова", "vacancy": "Кладовщик", "priority": "Высокий", "delta": 90},
+    {"name": "Дмитрий", "surname": "Волков", "vacancy": "Курьер", "priority": "Средний", "delta": 30},
+    {"name": "Ольга", "surname": "Морозова", "vacancy": "Оператор", "priority": "Высокий", "delta": -10},
+]
+
+def create_sla_presentation(category_id, user_id, stages):
+    """Создаёт четыре сделки на разных контрольных точках SLA."""
+    stage_id = stages.get("Новый кандидат")
+    if not stage_id:
+        raise RuntimeError("Не найдена стадия «Новый кандидат».")
+
+    now = datetime.now()
+    created = []
+
+    for case in SLA_PRESENTATION_SCENARIO:
+        deadline = now + timedelta(minutes=case["delta"])
+        inbound = deadline - timedelta(minutes=SLA_MINUTES)
+
+        fields = {
+            DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
+            DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
+            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: "+79000000000",
+            DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
+            DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Другое",
+            DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
+            DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
+            DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
+            DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
+        }
+
+        result = call(
+            "crm.item.add",
+            {
+                "entityTypeId": 2,
+                "useOriginalUfNames": "Y",
+                "fields": {
+                    "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
+                    "categoryId": category_id,
+                    "stageId": stage_id,
+                    "assignedById": user_id,
+                    "comments": DEMO_COMMENT,
+                    **fields,
+                },
+            },
+        )
+        deal_id = int(result["item"]["id"])
+        created.append(deal_id)
+
+        call(
+            "crm.timeline.comment.add",
+            {
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": (
+                        f'[SLA DEMO] Контрольная точка: '
+                        f'{case["delta"]:+d} мин до/после SLA.'
+                    ),
+                }
+            },
+        )
+
+    return created
+
 WORK_STAGES = [
     "Новый кандидат",
     "Квалификация",
@@ -739,6 +811,12 @@ class App:
 
         ttk.Button(
             frame,
+            text="⏱ SLA: 4 СОСТОЯНИЯ",
+            command=self.create_sla_presentation,
+        ).pack(anchor="w", pady=5)
+
+        ttk.Button(
+            frame,
             text="СОЗДАТЬ СРЕЗ ВОРОНКИ (24 сделки)",
             command=self.create_pipeline_snapshot,
         ).pack(anchor="w", pady=5)
@@ -926,6 +1004,26 @@ class App:
         except Exception as error:
             error_text = f"{type(error).__name__}: {error}\n\n{traceback.format_exc()}"
             self.root.after(0, lambda msg=error_text: messagebox.showerror("Ошибка", msg))
+
+    def create_sla_presentation(self):
+        threading.Thread(target=self._create_sla_presentation_worker, daemon=True).start()
+
+    def _create_sla_presentation_worker(self):
+        try:
+            self.ensure_ready()
+            created = create_sla_presentation(
+                self.pipeline_id,
+                self.user_id,
+                self.stages,
+            )
+            self.root.after(
+                0,
+                lambda: self.status.set(
+                    f"SLA-сценарий создан: {len(created)} сделки — +3ч / +1:30 / +30м / -10м"
+                ),
+            )
+        except Exception as error:
+            self.root.after(0, lambda: messagebox.showerror("Ошибка SLA", repr(error)))
 
     def create_pipeline_snapshot(self):
         threading.Thread(target=self._create_pipeline_snapshot_worker, daemon=True).start()

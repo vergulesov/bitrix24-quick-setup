@@ -123,6 +123,31 @@ def get_stages(category_id):
     ) or []
 
 
+def get_urgency_ids():
+    """Возвращает ID вариантов enum-поля Срочность."""
+    fields = call(
+        "crm.deal.userfield.list",
+        {
+            "filter": {"FIELD_NAME": DEAL_FIELD_CODES["ACTION_PRIORITY"]},
+            "order": {"ID": "ASC"},
+        },
+    ) or []
+    if not fields:
+        raise RuntimeError("Не найдено поле «Срочность». Сначала запустите setup.py.")
+
+    options = fields[0].get("LIST", []) or []
+    mapping = {item.get("VALUE"): int(item["ID"]) for item in options if item.get("ID") is not None}
+    required = {"🔴 Сейчас", "🟠 Скоро", "🟢 Не сейчас"}
+    missing = required - mapping.keys()
+    if missing:
+        raise RuntimeError(
+            "В поле «Срочность» не найдены варианты: "
+            + ", ".join(sorted(missing))
+            + ". Сначала запустите setup.py."
+        )
+    return mapping
+
+
 def get_current_user_id():
     return int(call("user.current")["ID"])
 
@@ -321,6 +346,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
     stage_id = stages[stage_name]
 
     action_priority = urgency_level(deadline, now)
+    urgency_id = get_urgency_ids()[action_priority]
 
     fields = {
         DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
@@ -333,7 +359,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response.isoformat(timespec="seconds") if response else "",
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["PRIORITY"]: priority,
-        DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
+        DEAL_FIELD_CODES["ACTION_PRIORITY"]: urgency_id,
         DEAL_FIELD_CODES["BLOCKER"]: blocker,
         DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
         # Для рабочего дня это время следующего действия.
@@ -385,7 +411,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: priority,
-                    DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
+                    DEAL_FIELD_CODES["ACTION_PRIORITY"]: urgency_id,
                     DEAL_FIELD_CODES["BLOCKER"]: blocker,
                     DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
                 },

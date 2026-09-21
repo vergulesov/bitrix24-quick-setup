@@ -532,10 +532,10 @@ def tag_latest_health_check_deal(category_id):
     comments = (
         current_comments
         if marker in current_comments
-        else f"{current_comments}\\n{marker}".strip()
+        else f"{current_comments}\n{marker}".strip()
     )
     if DEMO_COMMENT not in comments:
-        comments = f"{comments}\\n{DEMO_COMMENT}".strip()
+        comments = f"{comments}\n{DEMO_COMMENT}".strip()
 
     call(
         "crm.item.update",
@@ -572,6 +572,7 @@ def delete_demo(category_id):
             if item.get("comments") == DEMO_COMMENT
             or str(item.get("title", "")).startswith("[DEMO]")
             or "SLA DEMO" in str(item.get("comments", ""))
+            or "StaffFlow Health Check" in str(item.get("title", ""))
         ]
 
         if not targets:

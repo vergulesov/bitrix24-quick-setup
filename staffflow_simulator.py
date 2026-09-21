@@ -470,7 +470,6 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             DEAL_FIELD_CODES["NEXT_STEP"]: scenario["next"],
             DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-            DEAL_FIELD_CODES["SLA_STATUS"]: sla_status_text(deadline, now),
             DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
         }
         deal = call(
@@ -489,7 +488,6 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             },
         )
         deal_id = int(deal["item"]["id"])
-        verify_sla_status(deal_id, sla_status_text(deadline, now))
         call(
             "crm.timeline.comment.add",
             {

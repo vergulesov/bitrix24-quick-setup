@@ -305,6 +305,11 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response.isoformat(timespec="seconds") if response else "",
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+        DEAL_FIELD_CODES["SLA_STATUS"]: (
+            f"🔴 ПРОСРОЧЕНО · {abs(deadline_delta)} мин"
+            if deadline_delta < 0
+            else f"🟢 ОСТАЛОСЬ · {deadline_delta} мин"
+        ),
         DEAL_FIELD_CODES["PRIORITY"]: priority,
         DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
         DEAL_FIELD_CODES["BLOCKER"]: blocker,
@@ -356,6 +361,11 @@ def create_sla_candidate(category_id, user_id, stages, index):
                     DEAL_FIELD_CODES["VACANCY"]: vacancy,
                     DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["SLA_STATUS"]: (
+                        f"🔴 ПРОСРОЧЕНО · {abs(deadline_delta)} мин"
+                        if deadline_delta < 0
+                        else f"🟢 ОСТАЛОСЬ · {deadline_delta} мин"
+                    ),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: priority,
                     DEAL_FIELD_CODES["ACTION_PRIORITY"]: action_priority,
@@ -391,6 +401,11 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 "useOriginalUfNames": "Y",
                 "fields": {
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["SLA_STATUS"]: (
+                        f"🔴 ПРОСРОЧЕНО · {abs(deadline_delta)} мин"
+                        if deadline_delta < 0
+                        else f"🟢 ОСТАЛОСЬ · {deadline_delta} мин"
+                    ),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                 },
             },

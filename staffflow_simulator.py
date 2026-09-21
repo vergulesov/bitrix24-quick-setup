@@ -279,20 +279,29 @@ def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:
     return f"🟢 ОСТАЛОСЬ · {delta_minutes} мин"
 
 
-def verify_sla_status(deal_id: int, expected: str) -> None:
-    check = call(
-        "crm.item.get",
+def save_sla_status(deal_id: int, value: str) -> None:
+    """Записывает SLA через штатный метод сделки и сразу проверяет значение."""
+    call(
+        "crm.deal.update",
         {
-            "entityTypeId": 2,
             "id": deal_id,
-            "useOriginalUfNames": "Y",
+            "fields": {
+                DEAL_FIELD_CODES["SLA_STATUS"]: value,
+            },
         },
     )
-    saved = check.get("item", {}).get(DEAL_FIELD_CODES["SLA_STATUS"])
-    if saved != expected:
+
+    check = call(
+        "crm.deal.get",
+        {
+            "id": deal_id,
+        },
+    )
+    saved = (check or {}).get(DEAL_FIELD_CODES["SLA_STATUS"])
+    if saved != value:
         raise RuntimeError(
             f"Bitrix не сохранил SLA для сделки {deal_id}: "
-            f"ожидалось {expected!r}, получено {saved!r}"
+            f"ожидалось {value!r}, получено {saved!r}"
         )
 
 
@@ -396,7 +405,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 },
             },
         )
-        verify_sla_status(deal_id, sla_status_text(deadline, now))
+        save_sla_status(deal_id, sla_status_text(deadline, now))
     else:
         deal = call(
             "crm.item.add",

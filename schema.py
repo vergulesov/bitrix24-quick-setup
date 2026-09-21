@@ -24,6 +24,7 @@ DEAL_FIELD_SPECS: list[dict[str, Any]] = [
     {"field_name": "LAST_INBOUND_AT", "label": "Последний входящий", "type": "datetime", "sort": 200},
     {"field_name": "LAST_RESPONSE_AT", "label": "Последний ответ", "type": "datetime", "sort": 210},
     {"field_name": "RESPONSE_DEADLINE", "label": "Срок реакции", "type": "datetime", "sort": 220},
+    {"field_name": "SLA_STATUS", "label": "SLA", "type": "string", "sort": 225},
     {
         "field_name": "PRIORITY", "label": "Приоритет", "type": "enumeration", "sort": 230,
         "values": ["Высокий", "Средний", "Низкий"],

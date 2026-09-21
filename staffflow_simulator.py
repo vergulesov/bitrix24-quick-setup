@@ -104,6 +104,13 @@ def call(method, params=None):
     return data.get("result")
 
 
+def get_current_user_id():
+    result = call("user.current")
+    if not isinstance(result, dict) or not result.get("ID"):
+        raise RuntimeError("Не удалось определить текущего пользователя Bitrix.")
+    return int(result["ID"])
+
+
 def get_pipeline():
     result = call("crm.category.list", {"entityTypeId": 2})
     categories = result.get("categories", []) if isinstance(result, dict) else []

@@ -138,6 +138,17 @@ def stage_map(category_id):
     }
 
 
+def urgency_level(deadline: datetime, now: datetime | None = None) -> str:
+    """Три уровня срочности от времени до срока реакции."""
+    now = now or datetime.now()
+    minutes = (deadline - now).total_seconds() / 60
+    if minutes <= 30:
+        return "🔴 Сейчас"
+    if minutes <= 120:
+        return "🟠 Скоро"
+    return "🟢 Не сейчас"
+
+
 def create_sla_candidate(category_id, user_id, stages, index):
     scenario = WORKDAY_SCENARIO[index]
     name = scenario["name"]

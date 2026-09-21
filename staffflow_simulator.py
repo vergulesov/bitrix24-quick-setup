@@ -270,6 +270,17 @@ def find_recent_deal(category_id, name, timeout=15):
     raise RuntimeError(f"Open Channel отправил сообщение, но CRM-сделка для «{name}» не появилась.")
 
 
+def urgency_level(deadline: datetime, now: datetime | None = None) -> str:
+    """Три уровня срочности: сейчас, скоро, не сейчас."""
+    now = now or datetime.now()
+    minutes = (deadline - now).total_seconds() / 60
+    if minutes <= 30:
+        return "🔴 Сейчас"
+    if minutes <= 120:
+        return "🟠 Скоро"
+    return "🟢 Не сейчас"
+
+
 def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:
     """Человеческий статус SLA, рассчитанный от фактического дедлайна."""
     now = now or datetime.now()
@@ -309,11 +320,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
     stage_name = scenario_stage
     stage_id = stages[stage_name]
 
-    action_priority = (
-        "Просрочено" if deadline_delta < 0
-        else "Новое входящее" if stage_name == "Новый кандидат" and not answered
-        else "Обычная задача"
-    )
+    action_priority = urgency_level(deadline, now)
 
     fields = {
         DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
@@ -464,7 +471,7 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             DEAL_FIELD_CODES["VACANCY"]: scenario["vacancy"],
             DEAL_FIELD_CODES["PRIORITY"]: scenario["priority"],
             DEAL_FIELD_CODES["ACTION_PRIORITY"]: (
-                "Просрочено" if scenario["delta"] < 0 else "Обычная задача"
+                urgency_level(deadline, now)
             ),
             DEAL_FIELD_CODES["BLOCKER"]: scenario["blocker"],
             DEAL_FIELD_CODES["NEXT_STEP"]: scenario["next"],

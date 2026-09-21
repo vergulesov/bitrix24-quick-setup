@@ -130,6 +130,14 @@ def get_stages(category_id):
     ) or []
 
 
+def stage_map(category_id):
+    return {
+        item["NAME"]: item["STATUS_ID"]
+        for item in get_stages(category_id)
+        if item.get("NAME") and item.get("STATUS_ID")
+    }
+
+
 def create_sla_candidate(category_id, user_id, stages, index):
     scenario = WORKDAY_SCENARIO[index]
     name = scenario["name"]
@@ -218,7 +226,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: priority,
-                    DEAL_FIELD_CODES["ACTION_PRIORITY"]: urgency_id,
+                    DEAL_FIELD_CODES["URGENCY"]: action_priority,
                     DEAL_FIELD_CODES["BLOCKER"]: blocker,
                     DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
                 },

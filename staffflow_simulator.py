@@ -635,7 +635,7 @@ def create_presentation_incoming_fallback(category_id, user_id, stages, case, re
 
 
 def create_presentation_scenario(category_id, user_id, stages):
-    """Создаёт цельный сценарий презентации: входящие → рабочая очередь → Kanban."""
+    """Создаёт цельный сценарий презентации с НОВЫМИ incoming-кандидатами."""
     created = []
     now = datetime.now()
 
@@ -688,8 +688,10 @@ def create_presentation_scenario(category_id, user_id, stages):
         )
         return deal_id
 
-    # 1) Два НАСТОЯЩИХ входящих через Connector → Open Channel → CRM.
-    # На презентации сначала открываем Мессенджер и показываем, что работа начинается здесь.
+    # Каждый запуск презентации отправляет два реально новых incoming.
+    # send_workday_incoming() генерирует новый external user_id/chat_id/message_id
+    # на каждый вызов, поэтому Bitrix получает нового внешнего пользователя,
+    # а не продолжение старого диалога.
     incoming_cases = [
         {
             "name": "Сергей",
@@ -709,64 +711,53 @@ def create_presentation_scenario(category_id, user_id, stages):
         },
     ]
 
-
     for index, case in enumerate(incoming_cases):
-        try:
-            before = count_pipeline_deals(category_id)
-            send_workday_incoming(case["name"], case["vacancy"], index)
-            recent = find_recent_deal(
-                category_id,
+        before = count_pipeline_deals(category_id)
+
+        # Только настоящий incoming через Connector -> Open Channel -> CRM.
+        # REST-фолбэка больше нет: если incoming не создал новую сделку,
+        # сценарий падает, чтобы мы не маскировали проблему искусственной сделкой.
+        send_workday_incoming(case["name"], case["vacancy"], index)
+
+        recent = find_recent_deal(
+            category_id,
+            case["name"],
+            timeout=15,
+            before_count=before,
+        )
+        deal_id = int(recent["id"])
+
+        for contact_id in recent.get("contactIds", []) or []:
+            try:
+                call(
+                    "crm.item.update",
+                    {
+                        "entityTypeId": 3,
+                        "id": int(contact_id),
+                        "useOriginalUfNames": "Y",
+                        "fields": {"comments": "[DEMO] SLA simulator contact"},
+                    },
+                )
+            except Exception:
+                pass
+
+        created.append(
+            enrich_incoming(
+                deal_id,
                 case["name"],
-                timeout=15,
-                before_count=before,
+                case["surname"],
+                case["vacancy"],
+                case["delta"],
+                case["blocker"],
+                case["next"],
             )
-            deal_id = int(recent["id"])
+        )
 
-            for contact_id in recent.get("contactIds", []) or []:
-                try:
-                    call(
-                        "crm.item.update",
-                        {
-                            "entityTypeId": 3,
-                            "id": int(contact_id),
-                            "useOriginalUfNames": "Y",
-                            "fields": {"comments": "[DEMO] SLA simulator contact"},
-                        },
-                    )
-                except Exception:
-                    pass
-
-            created.append(
-                enrich_incoming(
-                    deal_id,
-                    case["name"],
-                    case["surname"],
-                    case["vacancy"],
-                    case["delta"],
-                    case["blocker"],
-                    case["next"],
-                )
-            )
-        except Exception as error:
-            # Реальный incoming не должен ломать всю презентацию.
-            # Если Connector/Open Channel временно не отвечает — продолжаем
-            # сценарий через REST-фолбэк, чтобы список и Kanban всё равно были готовы.
-            created.append(
-                create_presentation_incoming_fallback(
-                    category_id,
-                    user_id,
-                    stages,
-                    case,
-                    f"{type(error).__name__}: {error}",
-                )
-            )
-
-
-    # 2) Четыре контрольные точки SLA — это рабочая очередь для списка:
-    #    Просрочено / Сейчас / Скоро / Не срочно.
+    # Четыре контрольные точки SLA — рабочая очередь:
+    # Просрочено / Сейчас / Скоро / Не срочно.
     created.extend(create_sla_presentation(category_id, user_id, stages))
 
-    # 3) Одна ситуация «кандидат уже в процессе, но снова написал».
+    # Кандидат уже в процессе, но снова написал.
     qualified = {
         "name": "Алексей",
         "surname": "Смирнов",
@@ -824,8 +815,7 @@ def create_presentation_scenario(category_id, user_id, stages):
         },
     )
 
-    # 4) Kanban-срез: когда очередь входящих закрыта, показываем движение
-    # кандидатов по процессу. Здесь одна понятная карточка на каждую следующую стадию.
+    # Kanban-срез: следующие стадии процесса.
     for case in PRESENTATION_SCENARIO[2:]:
         deadline = now + timedelta(minutes=case["delta"])
         urgency = (
@@ -881,7 +871,6 @@ def create_presentation_scenario(category_id, user_id, stages):
         )
 
     return created
-
 
 def create_pipeline_snapshot(category_id, user_id, stages, count=24):
     """Создаёт плотный рабочий срез по стадиям без имитации входящих."""
@@ -1498,5 +1487,3 @@ class App:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    App(root)
-    root.mainloop()

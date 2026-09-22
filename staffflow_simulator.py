@@ -76,11 +76,10 @@ SLA_PRESENTATION_SCENARIO = [
 ]
 
 def create_sla_presentation(category_id, user_id, stages):
-    """Специальный SLA-стенд: четыре контрольные точки, рассчитанные штатным БП."""
+    """Специальный SLA-стенд: четыре фиксированных контрольных состояния."""
     stage_id = stages.get("Новый кандидат")
-    safe_stage = stages.get("Квалификация")
-    if not stage_id or not safe_stage:
-        raise RuntimeError("Не найдены стадии «Новый кандидат» / «Квалификация».")
+    if not stage_id:
+        raise RuntimeError("Не найдена стадия «Новый кандидат».")
 
     now = datetime.now()
     created = []
@@ -89,9 +88,14 @@ def create_sla_presentation(category_id, user_id, stages):
         deadline = now + timedelta(minutes=case["delta"])
         inbound = deadline - timedelta(minutes=SLA_MINUTES)
 
-        # Ключевой момент: заранее заполняем «Срок реакции», но НЕ трогаем
-        # «Срочность». При переводе в «Новый кандидат» штатный БП увидит,
-        # что срок уже заполнен, оставит его и сам рассчитает «Срочность».
+        # Это ИМЕННО специальный SLA-тест. Здесь дедлайн задаём заранее,
+        # чтобы четыре сделки одновременно показывали четыре контрольные точки.
+        urgency = (
+            "Просрочено" if case["delta"] < 0
+            else "Сейчас" if case["delta"] <= 30
+            else "Скоро" if case["delta"] <= 120
+            else "Не срочно"
+        )
         fields = {
             DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
@@ -107,7 +111,6 @@ def create_sla_presentation(category_id, user_id, stages):
             DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
         }
 
-        # Сначала создаём вне «Новый кандидат», чтобы БП ещё не стартовал.
         result = call(
             "crm.item.add",
             {
@@ -116,7 +119,7 @@ def create_sla_presentation(category_id, user_id, stages):
                 "fields": {
                     "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
                     "categoryId": category_id,
-                    "stageId": safe_stage,
+                    "stageId": stage_id,
                     "assignedById": user_id,
                     "comments": DEMO_COMMENT,
                     **fields,
@@ -125,20 +128,7 @@ def create_sla_presentation(category_id, user_id, stages):
         )
         deal_id = int(result["item"]["id"])
 
-        # Теперь переводим в «Новый кандидат».
-        # Здесь запускается штатный БП:
-        # если «Срок реакции» заполнен — он его не меняет,
-        # а дальше сам выставляет «Срочность» по этому сроку.
-        call(
-            "crm.item.update",
-            {
-                "entityTypeId": 2,
-                "id": deal_id,
-                "useOriginalUfNames": "Y",
-                "fields": {"stageId": stage_id},
-            },
-        )
-
+        # Сделка сразу создаётся в «Новый кандидат» — это штатный триггер SLA БП.
         created.append(deal_id)
 
         call(
@@ -149,8 +139,8 @@ def create_sla_presentation(category_id, user_id, stages):
                     "ENTITY_TYPE": "deal",
                     "COMMENT": (
                         f'[SLA DEMO] Контрольная точка: '
-                        f'{case["delta"]:+d} мин до срока реакции. '
-                        f'Срок реакции задан до запуска БП.'
+                        f'{case["delta"]:+d} мин. '
+                        f'Срочность: {urgency}.'
                     ),
                 }
             },
@@ -904,20 +894,22 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
 
 def create_presentation_scenario(category_id, user_id, stages):
     """
-    Единый презентационный сценарий StaffFlow.
+    Нормальный сценарий коммуникации для презентации.
 
-    Показывает три рабочих представления одной CRM:
-    1. SLA — четыре кандидата с разными контрольными точками.
-    2. Входящие — два новых кандидата реально приходят через Open Channel,
-       плюс повторные сообщения от существующих кандидатов.
-    3. Воронка — те же рабочие сущности распределены по стадиям для списка и канбана.
+    Логика:
+    1. Два новых кандидата реально приходят через Open Channel.
+    2. Четыре кандидата уже находятся на разных стадиях и снова пишут.
+       Это те же сделки и те же внешние чаты — новые сделки НЕ создаются.
+    3. Один из существующих кандидатов дополнительно получает входящий звонок.
+    4. Ещё два кандидата просто показывают продолжение воронки без новых входящих.
 
-    Итого после запуска: 12 кандидатов, из них 4 SLA + 2 новых входящих
-    + 4 повторных входящих + 2 кандидата на дальнейших стадиях.
+    Итого после запуска:
+      • 2 новых входящих;
+      • 4 повторных входящих от существующих кандидатов;
+      • 1 входящий звонок;
+      • 8 кандидатов по воронке.
     """
-    # Сначала создаём четыре SLA-контрольные точки.
-    # Эта функция использует тот же штатный БП, который мы уже проверили.
-    created = create_sla_presentation(category_id, user_id, stages)
+    created = []
 
     new_cases = [
         {
@@ -1357,7 +1349,7 @@ class App:
 
         ttk.Button(
             frame,
-            text="🎬 ПРЕЗЕНТАЦИЯ: SLA + ВХОДЯЩИЕ + ВОРОНКА",
+            text="🎬 СИМУЛЯЦИЯ КОММУНИКАЦИЙ",
             command=self.create_presentation_scenario,
         ).pack(anchor="w", pady=5)
 
@@ -1586,7 +1578,7 @@ class App:
             self.root.after(
                 0,
                 lambda: self.status.set(
-                    f"Презентация создана: {len(created)} кандидатов — SLA + входящие + список/канбан"
+                    f"Симуляция создана: {len(created)} кандидатов — новые входящие + повторные сообщения + входящий звонок + воронка"
                 ),
             )
         except Exception as error:

@@ -564,69 +564,120 @@ def create_sla_candidate(category_id, user_id, stages, index):
 
 
 
+
 def create_presentation_scenario(category_id, user_id, stages):
-    """Создаёт стабильный REST-сценарий для презентации всех рабочих представлений."""
+    """Создаёт цельный сценарий презентации: входящие → рабочая очередь → Kanban."""
     created = []
     now = datetime.now()
 
-    # 1) Четыре реальные контрольные точки SLA.
+    def enrich_incoming(deal_id, name, surname, vacancy, delta, blocker, next_step):
+        deadline = datetime.now() + timedelta(minutes=delta)
+        urgency = (
+            "Просрочено" if delta < 0
+            else "Сейчас" if delta <= 30
+            else "Скоро" if delta <= 120
+            else "Не срочно"
+        )
+
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": {
+                    "comments": DEMO_COMMENT,
+                    DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
+                    DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: surname,
+                    DEAL_FIELD_CODES["DESIRED_POSITION"]: vacancy,
+                    DEAL_FIELD_CODES["VACANCY"]: vacancy,
+                    DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
+                    DEAL_FIELD_CODES["LAST_INBOUND_AT"]: (
+                        deadline - timedelta(minutes=SLA_MINUTES)
+                    ).isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["NEXT_ACTION_AT"]: datetime.now().isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["PRIORITY"]: "Высокий",
+                    DEAL_FIELD_CODES["URGENCY"]: urgency,
+                    DEAL_FIELD_CODES["BLOCKER"]: blocker,
+                    DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
+                },
+            },
+        )
+        call(
+            "crm.timeline.comment.add",
+            {
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": (
+                        f"[PRESENTATION] Входящее сообщение через Открытую линию. "
+                        f"Вакансия: {vacancy}. Следующее действие: {next_step}."
+                    ),
+                }
+            },
+        )
+        return deal_id
+
+    # 1) Два НАСТОЯЩИХ входящих через Connector → Open Channel → CRM.
+    # На презентации сначала открываем Мессенджер и показываем, что работа начинается здесь.
+    incoming_cases = [
+        {
+            "name": "Сергей",
+            "surname": "Кузнецов",
+            "vacancy": "Водитель",
+            "delta": 30,
+            "blocker": "Нужно ответить",
+            "next": "Ответить кандидату",
+        },
+        {
+            "name": "Ирина",
+            "surname": "Соколова",
+            "vacancy": "Кладовщик",
+            "delta": 90,
+            "blocker": "Нужно ответить",
+            "next": "Ответить кандидату",
+        },
+    ]
+
+    for index, case in enumerate(incoming_cases):
+        send_workday_incoming(case["name"], case["vacancy"], index)
+        recent = find_recent_deal(category_id, case["name"])
+        deal_id = int(recent["id"])
+
+        # Помечаем связанный контакт, чтобы «Удалить демо-день» чистил хвост
+        # реального incoming-потока.
+        for contact_id in recent.get("contactIds", []) or []:
+            try:
+                call(
+                    "crm.item.update",
+                    {
+                        "entityTypeId": 3,
+                        "id": int(contact_id),
+                        "useOriginalUfNames": "Y",
+                        "fields": {"comments": "[DEMO] SLA simulator contact"},
+                    },
+                )
+            except Exception:
+                pass
+
+        created.append(
+            enrich_incoming(
+                deal_id,
+                case["name"],
+                case["surname"],
+                case["vacancy"],
+                case["delta"],
+                case["blocker"],
+                case["next"],
+            )
+        )
+
+    # 2) Четыре контрольные точки SLA — это рабочая очередь для списка:
+    #    Просрочено / Сейчас / Скоро / Не срочно.
     created.extend(create_sla_presentation(category_id, user_id, stages))
 
-    # 2) Отдельный новый входящий кандидат.
-    incoming = {
-        "name": "Сергей",
-        "surname": "Кузнецов",
-        "vacancy": "Водитель",
-        "stage": "Новый кандидат",
-        "priority": "Высокий",
-        "delta": 45,
-        "next": "Ответить кандидату",
-        "blocker": "Нужно ответить",
-        "source": "Открытая линия",
-    }
-
-    deadline = now + timedelta(minutes=incoming["delta"])
-    deal = call(
-        "crm.item.add",
-        {
-            "entityTypeId": 2,
-            "useOriginalUfNames": "Y",
-            "fields": {
-                "title": f'{incoming["name"]} {incoming["surname"]} · {incoming["vacancy"]}',
-                "categoryId": category_id,
-                "stageId": stages[incoming["stage"]],
-                "assignedById": user_id,
-                "comments": DEMO_COMMENT,
-                DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: incoming["name"],
-                DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: incoming["surname"],
-                DEAL_FIELD_CODES["CANDIDATE_PHONE"]: "+79000000222",
-                DEAL_FIELD_CODES["DESIRED_POSITION"]: incoming["vacancy"],
-                DEAL_FIELD_CODES["VACANCY"]: incoming["vacancy"],
-                DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: incoming["source"],
-                DEAL_FIELD_CODES["LAST_INBOUND_AT"]: now.isoformat(timespec="seconds"),
-                DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-                DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
-                DEAL_FIELD_CODES["PRIORITY"]: incoming["priority"],
-                DEAL_FIELD_CODES["URGENCY"]: "Скоро",
-                DEAL_FIELD_CODES["BLOCKER"]: incoming["blocker"],
-                DEAL_FIELD_CODES["NEXT_STEP"]: incoming["next"],
-            },
-        },
-    )
-    incoming_id = int(deal["item"]["id"])
-    created.append(incoming_id)
-    call(
-        "crm.timeline.comment.add",
-        {
-            "fields": {
-                "ENTITY_ID": incoming_id,
-                "ENTITY_TYPE": "deal",
-                "COMMENT": "[PRESENTATION] Новый кандидат пришёл через открытую линию. Нужно ответить.",
-            }
-        },
-    )
-
-    # 3) Уже квалифицированный кандидат с новым входящим сообщением.
+    # 3) Одна ситуация «кандидат уже в процессе, но снова написал».
     qualified = {
         "name": "Алексей",
         "surname": "Смирнов",
@@ -656,7 +707,9 @@ def create_presentation_scenario(category_id, user_id, stages):
                 DEAL_FIELD_CODES["VACANCY"]: qualified["vacancy"],
                 DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
                 DEAL_FIELD_CODES["LAST_INBOUND_AT"]: now.isoformat(timespec="seconds"),
-                DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: (now - timedelta(minutes=20)).isoformat(timespec="seconds"),
+                DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: (
+                    now - timedelta(minutes=20)
+                ).isoformat(timespec="seconds"),
                 DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: q_deadline.isoformat(timespec="seconds"),
                 DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
                 DEAL_FIELD_CODES["PRIORITY"]: qualified["priority"],
@@ -674,12 +727,16 @@ def create_presentation_scenario(category_id, user_id, stages):
             "fields": {
                 "ENTITY_ID": qualified_id,
                 "ENTITY_TYPE": "deal",
-                "COMMENT": "[PRESENTATION] Кандидат уже квалифицирован и прислал новое сообщение: «А какой график работы?»",
+                "COMMENT": (
+                    "[PRESENTATION] Кандидат уже в квалификации и прислал новое "
+                    "сообщение: «А какой график работы?»"
+                ),
             }
         },
     )
 
-    # 4) Остальные рабочие стадии — по одной понятной ситуации на каждую.
+    # 4) Kanban-срез: когда очередь входящих закрыта, показываем движение
+    # кандидатов по процессу. Здесь одна понятная карточка на каждую следующую стадию.
     for case in PRESENTATION_SCENARIO[2:]:
         deadline = now + timedelta(minutes=case["delta"])
         urgency = (
@@ -706,7 +763,9 @@ def create_presentation_scenario(category_id, user_id, stages):
                     DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
                     DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
                     DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow Presentation",
-                    DEAL_FIELD_CODES["LAST_INBOUND_AT"]: (deadline - timedelta(minutes=SLA_MINUTES)).isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["LAST_INBOUND_AT"]: (
+                        deadline - timedelta(minutes=SLA_MINUTES)
+                    ).isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: now.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
@@ -725,7 +784,9 @@ def create_presentation_scenario(category_id, user_id, stages):
                 "fields": {
                     "ENTITY_ID": deal_id,
                     "ENTITY_TYPE": "deal",
-                    "COMMENT": f"[PRESENTATION] {case['stage']}: {case['next']}.",
+                    "COMMENT": (
+                        f"[PRESENTATION] {case['stage']}: {case['next']}."
+                    ),
                 }
             },
         )

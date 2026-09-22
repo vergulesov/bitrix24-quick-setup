@@ -66,13 +66,18 @@ WORKDAY_SCENARIO = [
 
 
 
-# Четыре контрольные точки SLA для презентации:
+# Восемь контрольных точек SLA: по две на каждое состояние.
 # +3ч -> Не срочно, +1ч30м -> Скоро, +30м -> Сейчас, -10м -> Просрочено.
 SLA_PRESENTATION_SCENARIO = [
+    # По две контрольные точки на каждое состояние SLA.
     {"name": "Иван", "surname": "Петров", "vacancy": "Водитель", "priority": "Высокий", "delta": 180},
+    {"name": "Сергей", "surname": "Петров", "vacancy": "Водитель", "priority": "Средний", "delta": 180},
     {"name": "Марина", "surname": "Соколова", "vacancy": "Кладовщик", "priority": "Высокий", "delta": 90},
+    {"name": "Анна", "surname": "Соколова", "vacancy": "Кладовщик", "priority": "Средний", "delta": 90},
     {"name": "Дмитрий", "surname": "Волков", "vacancy": "Курьер", "priority": "Средний", "delta": 30},
+    {"name": "Андрей", "surname": "Волков", "vacancy": "Курьер", "priority": "Высокий", "delta": 30},
     {"name": "Ольга", "surname": "Морозова", "vacancy": "Оператор", "priority": "Высокий", "delta": -10},
+    {"name": "Елена", "surname": "Морозова", "vacancy": "Оператор", "priority": "Средний", "delta": -10},
 ]
 
 def create_sla_presentation(category_id, user_id, stages):
@@ -765,8 +770,12 @@ def create_existing_candidate_with_incoming(
         DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
         DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
         DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+7900000{500 + index}",
-        # DESIRED_POSITION определяет AI из нового сообщения.
-        # VACANCY намеренно не заполняем.
+        # Должность распознаётся AI из первого входящего сообщения.
+        # В этом симуляторе ниже фиксируем ожидаемый результат AI,
+        # чтобы презентационный стенд показывал уже обработанную карточку.
+        DEAL_FIELD_CODES["DESIRED_POSITION"]: case.get("ai_position") or case["vacancy"],
+        DEAL_FIELD_CODES["VACANCY"]: "",
+        DEAL_FIELD_CODES["DIRECTION"]: case.get("ai_direction", "Другое"),
         DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
         DEAL_FIELD_CODES["LAST_INBOUND_AT"]: now.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: (now - timedelta(minutes=20)).isoformat(timespec="seconds"),
@@ -818,6 +827,24 @@ def create_existing_candidate_with_incoming(
             }
         },
     )
+
+    # Показываем результат AI-квалификации именно на той же CRM-сделке.
+    ai_position = case.get("ai_position") or case.get("vacancy")
+    if ai_position:
+        call(
+            "crm.timeline.comment.add",
+            {
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": (
+                        "[AI DEMO] Входящее обращение квалифицировано: "
+                        f"желаемая должность → {ai_position}; "
+                        f"направление → {case.get('ai_direction', 'Другое')}."
+                    ),
+                }
+            },
+        )
 
     activity_id = None
     if make_call:
@@ -1310,7 +1337,7 @@ class App:
 
         ttk.Button(
             frame,
-            text="⏱ SLA: 4 СОСТОЯНИЯ",
+            text="⏱ SLA: 8 КОНТРОЛЬНЫХ СДЕЛОК",
             command=self.create_sla_presentation,
         ).pack(anchor="w", pady=5)
 
@@ -1524,7 +1551,7 @@ class App:
             self.root.after(
                 0,
                 lambda: self.status.set(
-                    f"SLA-сценарий создан: {len(created)} сделки — +3ч / +1:30 / +30м / -10м"
+                    f"SLA-сценарий создан: {len(created)} сделки — 2× каждое состояние"
                 ),
             )
         except Exception as error:
@@ -1598,86 +1625,3 @@ class App:
         self.thread.start()
 
     def loop(self, interval):
-        while self.running and self.scenario_index < len(WORKDAY_SCENARIO):
-            self._create_next_worker()
-            if self.running and self.scenario_index < len(WORKDAY_SCENARIO):
-                time.sleep(interval)
-
-        self.running = False
-        self.root.after(
-            0,
-            lambda: self.status.set(
-                f"Сценарий завершён: {self.created} / {len(WORKDAY_SCENARIO)}"
-            ),
-        )
-
-    def pause(self):
-        self.running = False
-        self.status.set(f"Пауза: {self.created} / {len(WORKDAY_SCENARIO)}")
-
-    def reset_scenario(self):
-        self.pause()
-        self.scenario_index = 0
-        self.created = 0
-        self.status.set("Сценарий сброшен: 0 / 30")
-
-    def delete_demo(self):
-        if not messagebox.askyesno(
-            "Удалить демо-день",
-            "Удалить все тестовые сделки StaffFlow из воронки «Подбор персонала»?",
-        ):
-            return
-
-        if getattr(self, "_delete_running", False):
-            return
-
-        self._delete_running = True
-        self.pause()
-        self.status.set("Удаление демо-данных…")
-
-        threading.Thread(
-            target=self._delete_demo_worker,
-            daemon=True,
-        ).start()
-
-    def _delete_demo_worker(self):
-        try:
-            self.ensure_ready()
-            deleted = delete_demo(self.pipeline_id)
-            deleted_contacts = delete_demo_contacts()
-            deleted_tasks = delete_demo_tasks()
-
-            unread_status = "непрочитанные диалоги сброшены"
-            try:
-                clear_demo_unread_dialogs()
-            except Exception as error:
-                unread_status = f"непрочитанные диалоги НЕ сброшены: {error}"
-
-            self.scenario_index = 0
-            self.created = 0
-            self.root.after(
-                0,
-                lambda: self.status.set(
-                    f"Удалено: сделки {deleted}, контакты {deleted_contacts}, "
-                    f"задачи «Ответить кандидату» {deleted_tasks}; "
-                    f"{unread_status}. Готово к новому запуску."
-                ),
-            )
-        except Exception as error:
-            error_text = f"{type(error).__name__}: {error}\n\n{traceback.format_exc()}"
-            self.root.after(
-                0,
-                lambda msg=error_text: messagebox.showerror("Ошибка удаления", msg),
-            )
-            self.root.after(
-                0,
-                lambda: self.status.set("Ошибка удаления демо-данных"),
-            )
-        finally:
-            self._delete_running = False
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    App(root)
-    root.mainloop()

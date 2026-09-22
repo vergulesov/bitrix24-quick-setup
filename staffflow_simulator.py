@@ -76,12 +76,33 @@ SLA_PRESENTATION_SCENARIO = [
 ]
 
 def _get_urgency_option_id(value):
-    data = call("crm.deal.fields", {})
-    field = (data or {}).get("result", {}).get(DEAL_FIELD_CODES["URGENCY"], {})
-    for item in field.get("items", []) or []:
-        if str(item.get("VALUE")) == str(value):
+    """Получает ID значения списка «Срочность» из полей смарт-сделки."""
+    data = call(
+        "crm.item.fields",
+        {
+            "entityTypeId": 2,
+            "useOriginalUfNames": "Y",
+        },
+    )
+    fields = (data or {}).get("result", {}).get("fields", {})
+    field = fields.get(DEAL_FIELD_CODES["URGENCY"], {})
+    items = field.get("items", []) or []
+
+    # На разных версиях REST название списка может быть VALUE или NAME.
+    for item in items:
+        item_value = item.get("VALUE")
+        item_name = item.get("NAME")
+        if str(item_value) == str(value) or str(item_name) == str(value):
             return int(item["ID"])
-    raise RuntimeError(f"Не найден вариант «Срочность» = {value!r}")
+
+    available = [
+        str(item.get("VALUE") or item.get("NAME") or item.get("ID"))
+        for item in items
+    ]
+    raise RuntimeError(
+        f"Не найден вариант «Срочность» = {value!r}. "
+        f"Доступные значения: {', '.join(available) or 'список не вернулся'}"
+    )
 
 
 def create_sla_presentation(category_id, user_id, stages):

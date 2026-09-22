@@ -394,19 +394,6 @@ def find_recent_deal(category_id, name, timeout=15, before_count=None):
     )
 
 
-def urgency_level(deadline: datetime, now: datetime | None = None) -> str:
-    """Три уровня срочности: сейчас, скоро, не сейчас."""
-    now = now or datetime.now()
-    minutes = (deadline - now).total_seconds() / 60
-    if minutes < 0:
-        return "Просрочено"
-    if minutes <= 30:
-        return "Сейчас"
-    if minutes <= 120:
-        return "Скоро"
-    return "Не срочно"
-
-
 def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:
     """Человеческий статус SLA, рассчитанный от фактического дедлайна."""
     now = now or datetime.now()
@@ -417,52 +404,6 @@ def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:
 
 
 _SLA_FIELD_CODE = None
-_URGENCY_OPTIONS = None
-
-def urgency_option_id(value: str) -> int:
-    """Возвращает ID пункта списка «Срочность» для текущего Bitrix24."""
-    global _URGENCY_OPTIONS
-    if _URGENCY_OPTIONS is None:
-        data = call("crm.deal.fields", {})
-        field = (data or {}).get("result", {}).get(DEAL_FIELD_CODES["URGENCY"], {})
-        items = field.get("items", []) or []
-        _URGENCY_OPTIONS = {
-            str(item.get("VALUE")): int(item["ID"])
-            for item in items
-            if item.get("ID") is not None and item.get("VALUE") is not None
-        }
-    if value not in _URGENCY_OPTIONS:
-        raise RuntimeError(
-            f"В списке «Срочность» нет значения {value!r}. "
-            f"Доступно: {', '.join(_URGENCY_OPTIONS.keys())}"
-        )
-    return _URGENCY_OPTIONS[value]
-
-
-def save_sla_status(deal_id: int, value: str) -> None:
-    """SLA_STATUS больше не используется: источник истины — RESPONSE_DEADLINE."""
-    return
-
-def save_urgency(deal_id: int, value: str) -> None:
-    """Записывает срочность через crm.deal.update и проверяет результат."""
-    call(
-        "crm.deal.update",
-        {
-            "id": deal_id,
-            "fields": {
-                DEAL_FIELD_CODES["URGENCY"]: urgency_option_id(value),
-            },
-        },
-    )
-    check = call("crm.deal.get", {"id": deal_id})
-    saved = (check or {}).get(DEAL_FIELD_CODES["URGENCY"])
-    expected_id = urgency_option_id(value)
-    if str(saved) != str(expected_id):
-        raise RuntimeError(
-            f"Bitrix не сохранил срочность для сделки {deal_id}: "
-            f"ожидался ID {expected_id} ({value!r}), получено {saved!r}"
-        )
-
 
 def create_sla_candidate(category_id, user_id, stages, index):
     scenario = WORKDAY_SCENARIO[index]
@@ -500,7 +441,6 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response.isoformat(timespec="seconds") if response else "",
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["PRIORITY"]: priority,
-        DEAL_FIELD_CODES["URGENCY"]: urgency_option_id(action_priority),
         DEAL_FIELD_CODES["BLOCKER"]: blocker,
         DEAL_FIELD_CODES["NEXT_STEP"]: next_step,
         # Для рабочего дня это время следующего действия.
@@ -602,7 +542,6 @@ def create_sla_candidate(category_id, user_id, stages, index):
         )
     time.sleep(2)
 
-    save_urgency(deal_id, action_priority)
 
     call(
         "crm.timeline.comment.add",
@@ -655,7 +594,6 @@ def create_presentation_incoming_fallback(category_id, user_id, stages, case, re
                 DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                 DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
                 DEAL_FIELD_CODES["PRIORITY"]: "Высокий",
-                DEAL_FIELD_CODES["URGENCY"]: urgency_option_id(urgency),
                 DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
                 DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
             },
@@ -812,7 +750,6 @@ def create_existing_candidate_with_incoming(
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
-        DEAL_FIELD_CODES["URGENCY"]: urgency_option_id("Скоро"),
         DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
         DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
     }
@@ -1104,12 +1041,6 @@ def create_presentation_scenario(category_id, user_id, stages):
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
-                    DEAL_FIELD_CODES["URGENCY"]: urgency_option_id(
-                        "Просрочено" if case["delta"] < 0
-                        else "Сейчас" if case["delta"] <= 30
-                        else "Скоро" if case["delta"] <= 120
-                        else "Не срочно"
-                    ),
                     DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
                     DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
                 },

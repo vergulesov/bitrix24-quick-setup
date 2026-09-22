@@ -75,33 +75,89 @@ SLA_PRESENTATION_SCENARIO = [
     {"name": "Ольга", "surname": "Морозова", "vacancy": "Оператор", "priority": "Высокий", "delta": -10},
 ]
 
-def _get_urgency_option_id(value):
-    """Получает ID значения поля-списка «Срочность» через описание пользовательского поля."""
-    data = call(
-        "crm.deal.userfield.list",
-        {
-            "filter": {
-                "FIELD_NAME": DEAL_FIELD_CODES["URGENCY"],
+def create_sla_presentation(category_id, user_id, stages):
+    """Специальный SLA-стенд: четыре контрольные точки, рассчитанные штатным БП."""
+    stage_id = stages.get("Новый кандидат")
+    safe_stage = stages.get("Квалификация")
+    if not stage_id or not safe_stage:
+        raise RuntimeError("Не найдены стадии «Новый кандидат» / «Квалификация».")
+
+    now = datetime.now()
+    created = []
+
+    for case in SLA_PRESENTATION_SCENARIO:
+        deadline = now + timedelta(minutes=case["delta"])
+        inbound = deadline - timedelta(minutes=SLA_MINUTES)
+
+        # Ключевой момент: заранее заполняем «Срок реакции», но НЕ трогаем
+        # «Срочность». При переводе в «Новый кандидат» штатный БП увидит,
+        # что срок уже заполнен, оставит его и сам рассчитает «Срочность».
+        fields = {
+            DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
+            DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
+            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+79000000{100 + len(created)}",
+            DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
+            DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow SLA Demo",
+            DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
+            DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
+            DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
+            DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
+        }
+
+        # Создаём вне «Новый кандидат», чтобы БП ещё не стартовал.
+        result = call(
+            "crm.item.add",
+            {
+                "entityTypeId": 2,
+                "useOriginalUfNames": "Y",
+                "fields": {
+                    "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
+                    "categoryId": category_id,
+                    "stageId": safe_stage,
+                    "assignedById": user_id,
+                    "comments": DEMO_COMMENT,
+                    **fields,
+                },
             },
-        },
-    )
-    fields = (data or {}).get("result", []) or []
-    if not fields:
-        raise RuntimeError(
-            f"Bitrix не вернул пользовательское поле {DEAL_FIELD_CODES['URGENCY']!r}."
+        )
+        deal_id = int(result["item"]["id"])
+
+        # Теперь переводим в «Новый кандидат».
+        # Здесь запускается штатный БП:
+        # если «Срок реакции» заполнен — он его не меняет,
+        # а дальше сам выставляет «Срочность» по этому сроку.
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": {"stageId": stage_id},
+            },
         )
 
-    field = fields[0]
-    items = field.get("LIST", []) or []
-    for item in items:
-        if str(item.get("VALUE")) == str(value):
-            return int(item["ID"])
+        created.append(deal_id)
 
-    available = [str(item.get("VALUE") or item.get("ID")) for item in items]
-    raise RuntimeError(
-        f"Не найден вариант «Срочность» = {value!r}. "
-        f"Доступные значения: {', '.join(available) or 'список пуст'}"
-    )
+        call(
+            "crm.timeline.comment.add",
+            {
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": (
+                        f'[SLA DEMO] Контрольная точка: '
+                        f'{case["delta"]:+d} мин до срока реакции. '
+                        f'Срок реакции задан до запуска БП.'
+                    ),
+                }
+            },
+        )
+
+    return created
+
 
 
 def create_sla_presentation(category_id, user_id, stages):

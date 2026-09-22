@@ -340,9 +340,12 @@ def send_workday_incoming(name, vacancy, index):
     return data or {"ok": True, "status_code": response.status_code}
 
 
-def find_recent_deal(category_id, name, timeout=15):
-    """Ждём сделку, которую Open Channel создаёт автоматически."""
+
+def find_recent_deal(category_id, name, timeout=15, before_count=None):
+    """Ждём новую CRM-сделку после реального incoming."""
     deadline = time.time() + timeout
+    last_items = []
+
     while time.time() < deadline:
         data = call(
             "crm.item.list",
@@ -353,11 +356,21 @@ def find_recent_deal(category_id, name, timeout=15):
                 "order": {"id": "DESC"},
             },
         )
-        items = (data or {}).get("items", [])
-        if items:
-            return items[0]
+        last_items = (data or {}).get("items", [])
+
+        if last_items:
+            if before_count is None or len(last_items) > before_count:
+                return last_items[0]
         time.sleep(1)
-    raise RuntimeError(f"Open Channel отправил сообщение, но CRM-сделка для «{name}» не появилась.")
+
+    if last_items:
+        # Даже если пагинация/фильтр не дал корректный count, берём последнюю сделку.
+        return last_items[0]
+
+    raise RuntimeError(
+        f"Open Channel отправил сообщение для «{name}», "
+        f"но CRM-сделка за {timeout} сек не появилась."
+    )
 
 
 def urgency_level(deadline: datetime, now: datetime | None = None) -> str:
@@ -565,6 +578,62 @@ def create_sla_candidate(category_id, user_id, stages, index):
 
 
 
+
+def create_presentation_incoming_fallback(category_id, user_id, stages, case, reason):
+    """REST-фолбэк: создаёт входящего кандидата, если реальный Connector недоступен."""
+    now = datetime.now()
+    deadline = now + timedelta(minutes=case["delta"])
+    urgency = (
+        "Просрочено" if case["delta"] < 0
+        else "Сейчас" if case["delta"] <= 30
+        else "Скоро" if case["delta"] <= 120
+        else "Не срочно"
+    )
+    deal = call(
+        "crm.item.add",
+        {
+            "entityTypeId": 2,
+            "useOriginalUfNames": "Y",
+            "fields": {
+                "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
+                "categoryId": category_id,
+                "stageId": stages["Новый кандидат"],
+                "assignedById": user_id,
+                "comments": DEMO_COMMENT,
+                DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
+                DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
+                DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
+                DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+                DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
+                DEAL_FIELD_CODES["LAST_INBOUND_AT"]: (
+                    deadline - timedelta(minutes=SLA_MINUTES)
+                ).isoformat(timespec="seconds"),
+                DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+                DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
+                DEAL_FIELD_CODES["PRIORITY"]: "Высокий",
+                DEAL_FIELD_CODES["URGENCY"]: urgency,
+                DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
+                DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
+            },
+        },
+    )
+    deal_id=int(deal["item"]["id"])
+    call(
+        "crm.timeline.comment.add",
+        {
+            "fields": {
+                "ENTITY_ID": deal_id,
+                "ENTITY_TYPE": "deal",
+                "COMMENT": (
+                    f"[PRESENTATION] Входящий кандидат через Открытую линию. "
+                    f"Реальный incoming не удалось дождаться: {reason}"
+                ),
+            }
+        },
+    )
+    return deal_id
+
+
 def create_presentation_scenario(category_id, user_id, stages):
     """Создаёт цельный сценарий презентации: входящие → рабочая очередь → Kanban."""
     created = []
@@ -640,38 +709,58 @@ def create_presentation_scenario(category_id, user_id, stages):
         },
     ]
 
+
     for index, case in enumerate(incoming_cases):
-        send_workday_incoming(case["name"], case["vacancy"], index)
-        recent = find_recent_deal(category_id, case["name"])
-        deal_id = int(recent["id"])
-
-        # Помечаем связанный контакт, чтобы «Удалить демо-день» чистил хвост
-        # реального incoming-потока.
-        for contact_id in recent.get("contactIds", []) or []:
-            try:
-                call(
-                    "crm.item.update",
-                    {
-                        "entityTypeId": 3,
-                        "id": int(contact_id),
-                        "useOriginalUfNames": "Y",
-                        "fields": {"comments": "[DEMO] SLA simulator contact"},
-                    },
-                )
-            except Exception:
-                pass
-
-        created.append(
-            enrich_incoming(
-                deal_id,
+        try:
+            before = count_pipeline_deals(category_id)
+            send_workday_incoming(case["name"], case["vacancy"], index)
+            recent = find_recent_deal(
+                category_id,
                 case["name"],
-                case["surname"],
-                case["vacancy"],
-                case["delta"],
-                case["blocker"],
-                case["next"],
+                timeout=15,
+                before_count=before,
             )
-        )
+            deal_id = int(recent["id"])
+
+            for contact_id in recent.get("contactIds", []) or []:
+                try:
+                    call(
+                        "crm.item.update",
+                        {
+                            "entityTypeId": 3,
+                            "id": int(contact_id),
+                            "useOriginalUfNames": "Y",
+                            "fields": {"comments": "[DEMO] SLA simulator contact"},
+                        },
+                    )
+                except Exception:
+                    pass
+
+            created.append(
+                enrich_incoming(
+                    deal_id,
+                    case["name"],
+                    case["surname"],
+                    case["vacancy"],
+                    case["delta"],
+                    case["blocker"],
+                    case["next"],
+                )
+            )
+        except Exception as error:
+            # Реальный incoming не должен ломать всю презентацию.
+            # Если Connector/Open Channel временно не отвечает — продолжаем
+            # сценарий через REST-фолбэк, чтобы список и Kanban всё равно были готовы.
+            created.append(
+                create_presentation_incoming_fallback(
+                    category_id,
+                    user_id,
+                    stages,
+                    case,
+                    f"{type(error).__name__}: {error}",
+                )
+            )
+
 
     # 2) Четыре контрольные точки SLA — это рабочая очередь для списка:
     #    Просрочено / Сейчас / Скоро / Не срочно.

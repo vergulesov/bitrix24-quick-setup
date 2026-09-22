@@ -841,7 +841,9 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
     before = count_pipeline_deals(category_id)
     sent = send_openline_message(
         name=case["name"],
-        vacancy=case["vacancy"],
+        # Для нового incoming должность НЕ передаём в CRM/чат:
+        # она должна определяться из текста сообщения.
+        vacancy=case.get("vacancy", ""),
         text=case["message"],
         message_prefix=f"presentation-new-{index}",
     )
@@ -859,8 +861,10 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
         "comments": DEMO_COMMENT,
         DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
         DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-        DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
-        DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+        # Должность в новом обращении приходит из текста сообщения.
+        # В демонстрации ниже она появляется как результат AI-квалификации.
+        DEAL_FIELD_CODES["DESIRED_POSITION"]: "",
+        DEAL_FIELD_CODES["VACANCY"]: "",
         DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
         DEAL_FIELD_CODES["LAST_INBOUND_AT"]: datetime.now().isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
@@ -873,9 +877,13 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
     # Симуляция результата AI-квалификации: само обращение приходит реально
     # через Open Channel, а затем в CRM появляются поля, которые в боевом
     # сценарии заполняет AI-квалификатор.
-    if case.get("ai_demo"):
+    # Симулируем именно результат AI после реального входящего сообщения.
+    # Источник должности — текст обращения; в сценарии ожидаемый результат
+    # хранится в expected_position, а не передаётся в Open Channel.
+    ai_position = case.get("ai_position") or case.get("expected_position")
+    if ai_position:
         fields.update({
-            DEAL_FIELD_CODES["DESIRED_POSITION"]: case["ai_position"],
+            DEAL_FIELD_CODES["DESIRED_POSITION"]: ai_position,
             DEAL_FIELD_CODES["DIRECTION"]: case.get("ai_direction", "Логистика"),
         })
 
@@ -903,7 +911,7 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
         except Exception:
             pass
 
-    if case.get("ai_demo"):
+    if ai_position:
         call(
             "crm.timeline.comment.add",
             {
@@ -912,7 +920,7 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
                     "ENTITY_TYPE": "deal",
                     "COMMENT": (
                         "[AI DEMO] Входящее сообщение квалифицировано: "
-                        f"желаемая должность → {case['ai_position']}; "
+                        f"желаемая должность → {ai_position}; "
                         f"направление → {case.get('ai_direction', 'Логистика')}."
                     ),
                 },

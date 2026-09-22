@@ -102,6 +102,7 @@ def create_sla_presentation(category_id, user_id, stages):
             DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
+            DEAL_FIELD_CODES["URGENCY"]: urgency,
             DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
             DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
             DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),

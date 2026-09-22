@@ -96,7 +96,7 @@ def create_sla_presentation(category_id, user_id, stages):
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
             DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+79000000{100 + len(created)}",
             DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
-            DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+            DEAL_FIELD_CODES["VACANCY"]: "",
             DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow SLA Demo",
             DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
@@ -112,7 +112,7 @@ def create_sla_presentation(category_id, user_id, stages):
                 "entityTypeId": 2,
                 "useOriginalUfNames": "Y",
                 "fields": {
-                    "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
+                    "title": f'{case["name"]} {case["surname"]}',
                     "categoryId": category_id,
                     "stageId": stage_id,
                     "assignedById": user_id,
@@ -445,7 +445,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
         DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: "Демо",
         DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+7900{1000000 + index * 731}",
         DEAL_FIELD_CODES["DESIRED_POSITION"]: vacancy,
-        DEAL_FIELD_CODES["VACANCY"]: vacancy,
+        DEAL_FIELD_CODES["VACANCY"]: "",
         DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow Demo",
         DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: response.isoformat(timespec="seconds") if response else "",
@@ -515,7 +515,7 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 "entityTypeId": 2,
                 "useOriginalUfNames": "Y",
                 "fields": {
-                    "title": f"{name} — {vacancy}",
+                    "title": name,
                     "categoryId": category_id,
                     "stageId": create_stage_id,
                     "assignedById": user_id,
@@ -974,7 +974,7 @@ def create_pipeline_snapshot(category_id, user_id, stages, count=24):
             DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: "Демо",
             DEAL_FIELD_CODES["DESIRED_POSITION"]: scenario["vacancy"],
-            DEAL_FIELD_CODES["VACANCY"]: scenario["vacancy"],
+            DEAL_FIELD_CODES["VACANCY"]: "",
             DEAL_FIELD_CODES["PRIORITY"]: scenario["priority"],
             DEAL_FIELD_CODES["URGENCY"]: (
                 urgency_level(deadline, now)

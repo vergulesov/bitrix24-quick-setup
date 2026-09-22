@@ -988,7 +988,7 @@ def create_presentation_scenario(category_id, user_id, stages):
 
     existing_cases = [
         {"name":"Павел","surname":"Смирнов","vacancy":"Администратор","stage":"Квалификация","priority":"Высокий","delta":60,"blocker":"Новое сообщение","next":"Ответить кандидату","message":"А график работы какой? Могу работать посменно.","make_call":False},
-        {"name":"Юлия","surname":"Орлова","vacancy":"Администратор","stage":"Интервью","priority":"Высокий","delta":30,"blocker":"Новое сообщение","next":"Ответить кандидату","message":"Подтвердите, пожалуйста, интервью на сегодня.","make_call":True},
+        {"name":"Юлия","surname":"Орлова","vacancy":"Администратор","stage":"Интервью","priority":"Высокий","delta":30,"blocker":"Новое сообщение","next":"Ответить кандидату","message":"Подтвердите, пожалуйста, интервью на сегодня.","make_call":False},
         {"name":"Наталья","surname":"Волкова","vacancy":"Кладовщик","stage":"Документы","priority":"Высокий","delta":90,"blocker":"Новое сообщение","next":"Проверить документы","message":"Документы отправила. Проверьте, пожалуйста, дошли ли они.","make_call":False},
         {"name":"Денис","surname":"Иванов","vacancy":"Водитель","stage":"Передан заказчику","priority":"Высокий","delta":120,"blocker":"Новое сообщение","next":"Ответить кандидату","message":"Есть новости по моей кандидатуре от заказчика?","make_call":False},
     ]

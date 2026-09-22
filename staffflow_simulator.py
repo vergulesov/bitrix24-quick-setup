@@ -839,11 +839,9 @@ def create_existing_candidate_with_incoming(
 def create_new_incoming_candidate(category_id, user_id, stages, case, index):
     """Создаёт нового кандидата реальным входящим сообщением."""
     before = count_pipeline_deals(category_id)
-    # ВАЖНО: должность НЕ передаём в коннектор отдельным полем.
-    # AI должен определить её только из текста сообщения.
     sent = send_openline_message(
         name=case["name"],
-        vacancy="",
+        vacancy=case["vacancy"],
         text=case["message"],
         message_prefix=f"presentation-new-{index}",
     )
@@ -857,26 +855,37 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
     deal_id = int(recent["id"])
 
     deadline = datetime.now() + timedelta(minutes=case.get("delta", 60))
+    fields = {
+        "comments": DEMO_COMMENT,
+        DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
+        DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
+        DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
+        DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+        DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
+        DEAL_FIELD_CODES["LAST_INBOUND_AT"]: datetime.now().isoformat(timespec="seconds"),
+        DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+        DEAL_FIELD_CODES["NEXT_ACTION_AT"]: datetime.now().isoformat(timespec="seconds"),
+        DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
+        DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
+        DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
+    }
+
+    # Симуляция результата AI-квалификации: само обращение приходит реально
+    # через Open Channel, а затем в CRM появляются поля, которые в боевом
+    # сценарии заполняет AI-квалификатор.
+    if case.get("ai_demo"):
+        fields.update({
+            DEAL_FIELD_CODES["DESIRED_POSITION"]: case["ai_position"],
+            DEAL_FIELD_CODES["DIRECTION"]: case.get("ai_direction", "Логистика"),
+        })
+
     call(
         "crm.item.update",
         {
             "entityTypeId": 2,
             "id": deal_id,
             "useOriginalUfNames": "Y",
-            "fields": {
-                "comments": DEMO_COMMENT,
-                DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
-                DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-                # DESIRED_POSITION заполняется коннектором через AI.
-                # VACANCY в AI-сценарии намеренно не заполняем.
-                DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
-                DEAL_FIELD_CODES["LAST_INBOUND_AT"]: datetime.now().isoformat(timespec="seconds"),
-                DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-                DEAL_FIELD_CODES["NEXT_ACTION_AT"]: datetime.now().isoformat(timespec="seconds"),
-                DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
-                DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
-                DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
-            },
+            "fields": fields,
         },
     )
 
@@ -893,6 +902,22 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
             )
         except Exception:
             pass
+
+    if case.get("ai_demo"):
+        call(
+            "crm.timeline.comment.add",
+            {
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": (
+                        "[AI DEMO] Входящее сообщение квалифицировано: "
+                        f"желаемая должность → {case['ai_position']}; "
+                        f"направление → {case.get('ai_direction', 'Логистика')}."
+                    ),
+                },
+            },
+        )
 
     return deal_id
 
@@ -1282,7 +1307,7 @@ class App:
 
         ttk.Button(
             frame,
-            text="🎬 ПРЕЗЕНТАЦИЯ: SLA + ВХОДЯЩИЕ + ВОРОНКА",
+            text="🎬 ФИНАЛЬНАЯ ПРЕЗЕНТАЦИЯ: SLA + AI + ВХОДЯЩИЕ + ВОРОНКА",
             command=self.create_presentation_scenario,
         ).pack(anchor="w", pady=5)
 

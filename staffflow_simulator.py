@@ -76,7 +76,7 @@ SLA_PRESENTATION_SCENARIO = [
 ]
 
 def create_sla_presentation(category_id, user_id, stages):
-    """Специальный SLA-стенд: четыре фиксированных контрольных состояния."""
+    """SLA-стенд: те же четыре сделки получают реальный Open Channel incoming."""
     stage_id = stages.get("Новый кандидат")
     if not stage_id:
         raise RuntimeError("Не найдена стадия «Новый кандидат».")
@@ -84,26 +84,66 @@ def create_sla_presentation(category_id, user_id, stages):
     now = datetime.now()
     created = []
 
-    for case in SLA_PRESENTATION_SCENARIO:
+    for index, case in enumerate(SLA_PRESENTATION_SCENARIO):
         deadline = now + timedelta(minutes=case["delta"])
         inbound = deadline - timedelta(minutes=SLA_MINUTES)
 
+        # Сначала создаём CRM-контакт с тем же IMOL-идентификатором,
+        # который потом придёт из Connector. Chat Tracker сможет узнать
+        # существующего клиента и не создавать второго кандидата.
+        stamp = int(time.time() * 1000)
+        external_user_id = f"sla-user-{stamp}-{index}"
+        external_chat_id = f"sla-chat-{stamp}-{index}"
+        messenger_value = (
+            f"imol|{CONNECTOR_ID}|{OPEN_LINE_ID}|"
+            f"{external_chat_id}|{external_user_id}"
+        )
+        phone = f"+79000000{100 + index}"
+
+        contact_result = call(
+            "crm.item.add",
+            {
+                "entityTypeId": 3,
+                "useOriginalUfNames": "Y",
+                "fields": {
+                    "name": case["name"],
+                    "lastName": case["surname"],
+                    "fm": [
+                        {
+                            "typeId": "PHONE",
+                            "valueType": "WORK",
+                            "value": phone,
+                        },
+                        {
+                            "typeId": "IM",
+                            "valueType": "IMOL",
+                            "value": messenger_value,
+                        },
+                    ],
+                    "comments": "[DEMO] SLA simulator contact",
+                },
+            },
+        )
+        contact_id = int(contact_result["item"]["id"])
+
         # КРИТИЧНО: сделка сразу создаётся в «Новый кандидат»
-        # и сразу получает «Срок реакции». Это штатный запуск SLA-БП.
+        # и сразу получает «Срок реакции». Именно это даёт штатному SLA-БП
+        # правильную стадию и дедлайн на момент его запуска.
         # «Срочность» здесь НЕ заполняем — её пишет сам БП.
         fields = {
             DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+79000000{100 + len(created)}",
+            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: phone,
             DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
             DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
-            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow SLA Demo",
+            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
             DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
             DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
             DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
             DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
+            "contactIds": [contact_id],
         }
 
         result = call(
@@ -122,9 +162,22 @@ def create_sla_presentation(category_id, user_id, stages):
             },
         )
         deal_id = int(result["item"]["id"])
-
-        # Сделка сразу создаётся в «Новый кандидат» — это штатный триггер SLA БП.
         created.append(deal_id)
+
+        # Теперь тот же внешний клиент реально пишет в Open Channel.
+        # Благодаря заранее созданному контакту CRM tracker должен связать
+        # входящий диалог с этим же CRM-клиентом, а не создать дубль.
+        send_openline_message(
+            name=f'{case["name"]} {case["surname"]}',
+            vacancy=case["vacancy"],
+            text=(
+                f"Здравствуйте! Откликаюсь на вакансию «{case['vacancy']}». "
+                "Готов обсудить условия."
+            ),
+            external_user_id=external_user_id,
+            external_chat_id=external_chat_id,
+            message_prefix=f"sla-incoming-{index}",
+        )
 
         call(
             "crm.timeline.comment.add",
@@ -133,9 +186,10 @@ def create_sla_presentation(category_id, user_id, stages):
                     "ENTITY_ID": deal_id,
                     "ENTITY_TYPE": "deal",
                     "COMMENT": (
-                        f'[SLA DEMO] Контрольная точка: '
-                        f'{case["delta"]:+d} мин. '
-                        "Срочность рассчитывает SLA-БП."
+                        f'[SLA DEMO] Контрольная точка: {case["delta"]:+d} мин. '
+                        "Сделка создана в «Новый кандидат», "
+                        "«Срочность» рассчитывает SLA-БП; "
+                        "входящее сообщение отправлено через Open Channel."
                     ),
                 }
             },

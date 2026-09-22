@@ -78,8 +78,9 @@ SLA_PRESENTATION_SCENARIO = [
 def create_sla_presentation(category_id, user_id, stages):
     """Специальный SLA-стенд: четыре контрольные точки, рассчитанные штатным БП."""
     stage_id = stages.get("Новый кандидат")
-    if not stage_id:
-        raise RuntimeError("Не найдена стадия «Новый кандидат».")
+    safe_stage = stages.get("Квалификация")
+    if not stage_id or not safe_stage:
+        raise RuntimeError("Не найдены стадии «Новый кандидат» / «Квалификация».")
 
     now = datetime.now()
     created = []
@@ -107,7 +108,8 @@ def create_sla_presentation(category_id, user_id, stages):
             DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
         }
 
-        # Создаём сразу в «Новый кандидат», чтобы штатный БП стартовал на создании сделки.
+        # Сначала создаём в безопасной стадии: автоматический БП SLA
+        # у нас срабатывает именно на переходе в «Новый кандидат».
         result = call(
             "crm.item.add",
             {
@@ -116,7 +118,7 @@ def create_sla_presentation(category_id, user_id, stages):
                 "fields": {
                     "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
                     "categoryId": category_id,
-                    "stageId": stage_id,
+                    "stageId": safe_stage,
                     "assignedById": user_id,
                     "comments": DEMO_COMMENT,
                     **fields,
@@ -125,8 +127,18 @@ def create_sla_presentation(category_id, user_id, stages):
         )
         deal_id = int(result["item"]["id"])
 
-        # Сделка сразу создаётся в «Новый кандидат».
-        # При включённом штатном БП это сразу запускает контроль SLA.
+        # Ключевой триггер SLA: переводим сделку в «Новый кандидат».
+        # Именно этот переход запускает штатный БП.
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": {"stageId": stage_id},
+            },
+        )
+
         created.append(deal_id)
 
         call(

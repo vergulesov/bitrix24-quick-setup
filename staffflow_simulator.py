@@ -1648,3 +1648,63 @@ class App:
         self.created = 0
         self.status.set("Сценарий сброшен: 0 / 30")
 
+    def delete_demo(self):
+        if not messagebox.askyesno(
+            "Удалить демо-день",
+            "Удалить все тестовые сделки StaffFlow из воронки «Подбор персонала»?",
+        ):
+            return
+
+        if getattr(self, "_delete_running", False):
+            return
+
+        self._delete_running = True
+        self.pause()
+        self.status.set("Удаление демо-данных…")
+
+        threading.Thread(
+            target=self._delete_demo_worker,
+            daemon=True,
+        ).start()
+
+    def _delete_demo_worker(self):
+        try:
+            self.ensure_ready()
+            deleted = delete_demo(self.pipeline_id)
+            deleted_contacts = delete_demo_contacts()
+            deleted_tasks = delete_demo_tasks()
+
+            unread_status = "непрочитанные диалоги сброшены"
+            try:
+                clear_demo_unread_dialogs()
+            except Exception as error:
+                unread_status = f"непрочитанные диалоги НЕ сброшены: {error}"
+
+            self.scenario_index = 0
+            self.created = 0
+            self.root.after(
+                0,
+                lambda: self.status.set(
+                    f"Удалено: сделки {deleted}, контакты {deleted_contacts}, "
+                    f"задачи «Ответить кандидату» {deleted_tasks}; "
+                    f"{unread_status}. Готово к новому запуску."
+                ),
+            )
+        except Exception as error:
+            error_text = f"{type(error).__name__}: {error}\n\n{traceback.format_exc()}"
+            self.root.after(
+                0,
+                lambda msg=error_text: messagebox.showerror("Ошибка удаления", msg),
+            )
+            self.root.after(
+                0,
+                lambda: self.status.set("Ошибка удаления демо-данных"),
+            )
+        finally:
+            self._delete_running = False
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    App(root)
+    root.mainloop()

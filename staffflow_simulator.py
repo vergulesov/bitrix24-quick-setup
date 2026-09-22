@@ -943,6 +943,7 @@ def create_presentation_scenario(category_id, user_id, stages):
     new_cases = [
         {
             "name": "Сергей",
+            "surname": "Кузнецов",
             "vacancy": "Водитель",
             "message": "Здравствуйте! Интересует вакансия «Водитель». Готов выйти быстро.",
             "priority": "Высокий",
@@ -952,6 +953,7 @@ def create_presentation_scenario(category_id, user_id, stages):
         },
         {
             "name": "Ирина",
+            "surname": "Соколова",
             "vacancy": "Кладовщик",
             "message": "Добрый день! Подскажите, есть ли сейчас вакансия кладовщика?",
             "priority": "Высокий",

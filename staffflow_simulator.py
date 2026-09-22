@@ -137,6 +137,24 @@ def create_sla_presentation(category_id, user_id, stages):
 
     return created
 
+
+PRESENTATION_SCENARIO = [
+    {"name": "Сергей", "surname": "Кузнецов", "vacancy": "Водитель", "stage": "Новый кандидат",
+     "priority": "Высокий", "delta": 45, "next": "Ответить кандидату", "blocker": "Нужно ответить"},
+    {"name": "Павел", "surname": "Смирнов", "vacancy": "Кладовщик", "stage": "Квалификация",
+     "priority": "Высокий", "delta": 60, "next": "Уточнить опыт", "blocker": "Не хватает данных"},
+    {"name": "Юлия", "surname": "Орлова", "vacancy": "Администратор", "stage": "Интервью",
+     "priority": "Высокий", "delta": 30, "next": "Провести интервью", "blocker": "Интервью сегодня"},
+    {"name": "Глеб", "surname": "Морозов", "vacancy": "Менеджер", "stage": "Ожидаем решение",
+     "priority": "Средний", "delta": 45, "next": "Запросить решение", "blocker": "Нет решения"},
+    {"name": "Наталья", "surname": "Волкова", "vacancy": "Кладовщик", "stage": "Документы",
+     "priority": "Высокий", "delta": -20, "next": "Запросить документы", "blocker": "Документы не получены"},
+    {"name": "Денис", "surname": "Иванов", "vacancy": "Водитель", "stage": "Передан заказчику",
+     "priority": "Высокий", "delta": 30, "next": "Запросить обратную связь", "blocker": "Ждём заказчика"},
+    {"name": "Николай", "surname": "Соколов", "vacancy": "Комплектовщик", "stage": "Выход на работу",
+     "priority": "Высокий", "delta": -10, "next": "Подтвердить выход", "blocker": "Выход сегодня"},
+]
+
 WORK_STAGES = [
     "Новый кандидат",
     "Квалификация",
@@ -545,6 +563,205 @@ def create_sla_candidate(category_id, user_id, stages, index):
     return deal_id, stage_name, priority, deadline_delta, answered
 
 
+
+def create_presentation_scenario(category_id, user_id, stages):
+    """Создаёт один цельный набор данных для презентации рабочего места рекрутера."""
+    created = []
+
+    # 1) Четыре контрольные точки SLA в «Новый кандидат».
+    created.extend(create_sla_presentation(category_id, user_id, stages))
+
+    # 2) Реальный входящий кандидат, который остаётся во «Входящих».
+    if not CONNECTOR_TOKEN:
+        raise RuntimeError(
+            "Для презентационного сценария нужен STAFFFLOW_SEND_TOKEN в .env: "
+            "он создаёт реальные входящие через Open Channel."
+        )
+
+    stamp = int(time.time() * 1000)
+    incoming_cases = [
+        {
+            "name": "Сергей",
+            "surname": "Кузнецов",
+            "vacancy": "Водитель",
+            "user_id": f"presentation-incoming-{stamp}",
+            "chat_id": f"presentation-chat-{stamp}",
+            "message": "Здравствуйте! Интересует вакансия «Водитель». Подскажите условия?",
+        },
+        {
+            "name": "Алексей",
+            "surname": "Смирнов",
+            "vacancy": "Водитель",
+            "user_id": f"presentation-qualified-{stamp}",
+            "chat_id": f"presentation-qualified-chat-{stamp}",
+            "message": "Здравствуйте! Хочу устроиться водителем.",
+        },
+    ]
+
+    real_deals = []
+    for index, case in enumerate(incoming_cases):
+        payload = {
+            "token": CONNECTOR_TOKEN,
+            "user_id": case["user_id"],
+            "user_name": f'{case["name"]} {case["surname"]}',
+            "message_id": f"presentation-msg-{stamp}-{index}",
+            "chat_id": case["chat_id"],
+            "chat_name": f'{case["name"]} {case["surname"]} — {case["vacancy"]}',
+            "text": case["message"],
+        }
+        response = requests.post(
+            CONNECTOR_URL.rstrip("/") + "/send",
+            json=payload,
+            timeout=20,
+        )
+        if response.status_code < 200 or response.status_code >= 300:
+            raise RuntimeError(
+                f"Connector /send вернул HTTP {response.status_code}: {response.text!r}"
+            )
+
+        recent = find_recent_deal(category_id, case["name"])
+        deal_id = int(recent["id"])
+        real_deals.append((deal_id, case))
+
+        contact_ids = recent.get("contactIds", []) or []
+        for contact_id in contact_ids:
+            call(
+                "crm.item.update",
+                {
+                    "entityTypeId": 3,
+                    "id": int(contact_id),
+                    "useOriginalUfNames": "Y",
+                    "fields": {"comments": "[DEMO] SLA simulator contact"},
+                },
+            )
+
+        now = datetime.now()
+        deadline = now + timedelta(minutes=45)
+        fields = {
+            DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
+            DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
+            DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
+            DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow Presentation",
+            DEAL_FIELD_CODES["LAST_INBOUND_AT"]: now.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["PRIORITY"]: "Высокий",
+            DEAL_FIELD_CODES["URGENCY"]: "🟠 Скоро",
+            DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
+            DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
+            "comments": DEMO_COMMENT,
+        }
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": fields,
+            },
+        )
+
+    # Алексей уже квалифицирован, затем получает новое сообщение.
+    qualified_id, qualified_case = real_deals[1]
+    call(
+        "crm.item.update",
+        {
+            "entityTypeId": 2,
+            "id": qualified_id,
+            "useOriginalUfNames": "Y",
+            "fields": {
+                "stageId": stages["Квалификация"],
+                DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
+                DEAL_FIELD_CODES["BLOCKER"]: "Новое сообщение",
+                DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: datetime.now().isoformat(timespec="seconds"),
+            },
+        },
+    )
+
+    second_stamp = int(time.time() * 1000)
+    second_payload = {
+        "token": CONNECTOR_TOKEN,
+        "user_id": qualified_case["user_id"],
+        "user_name": f'{qualified_case["name"]} {qualified_case["surname"]}',
+        "message_id": f"presentation-followup-{second_stamp}",
+        "chat_id": qualified_case["chat_id"],
+        "chat_name": f'{qualified_case["name"]} {qualified_case["surname"]} — {qualified_case["vacancy"]}',
+        "text": "А подскажите, пожалуйста, график работы какой?",
+    }
+    response = requests.post(
+        CONNECTOR_URL.rstrip("/") + "/send",
+        json=second_payload,
+        timeout=20,
+    )
+    if response.status_code < 200 or response.status_code >= 300:
+        raise RuntimeError(
+            f"Connector /send (повторное сообщение) вернул HTTP {response.status_code}: "
+            f"{response.text!r}"
+        )
+
+    created.extend([item[0] for item in real_deals])
+
+    # 3) Остальные стадии — по одной выразительной сделке на каждую.
+    now = datetime.now()
+    for case in PRESENTATION_SCENARIO[1:]:
+        deadline = now + timedelta(minutes=case["delta"])
+        deal = call(
+            "crm.item.add",
+            {
+                "entityTypeId": 2,
+                "useOriginalUfNames": "Y",
+                "fields": {
+                    "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
+                    "categoryId": category_id,
+                    "stageId": stages[case["stage"]],
+                    "assignedById": user_id,
+                    "comments": DEMO_COMMENT,
+                    DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
+                    DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
+                    DEAL_FIELD_CODES["CANDIDATE_PHONE"]: "+79000000111",
+                    DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
+                    DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+                    DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow Presentation",
+                    DEAL_FIELD_CODES["LAST_INBOUND_AT"]: (deadline - timedelta(minutes=SLA_MINUTES)).isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: now.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
+                    DEAL_FIELD_CODES["URGENCY"]: urgency_level(deadline, now),
+                    DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
+                    DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
+                },
+            },
+        )
+        deal_id = int(deal["item"]["id"])
+        created.append(deal_id)
+        call(
+            "crm.timeline.comment.add",
+            {
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": f"[PRESENTATION] {case['stage']}: {case['next']}.",
+                }
+            },
+        )
+
+    # Маркер на квалифицированном кандидате: входящее сообщение уже пришло.
+    call(
+        "crm.timeline.comment.add",
+        {
+            "fields": {
+                "ENTITY_ID": qualified_id,
+                "ENTITY_TYPE": "deal",
+                "COMMENT": "[PRESENTATION] Кандидат уже квалифицирован и прислал новое сообщение.",
+            }
+        },
+    )
+
+    return created
+
+
 def create_pipeline_snapshot(category_id, user_id, stages, count=24):
     """Создаёт плотный рабочий срез по стадиям без имитации входящих."""
     candidates = WORKDAY_SCENARIO[6:]
@@ -822,6 +1039,12 @@ class App:
 
         ttk.Button(
             frame,
+            text="🎬 ПРЕЗЕНТАЦИОННЫЙ СЦЕНАРИЙ",
+            command=self.create_presentation_scenario,
+        ).pack(anchor="w", pady=5)
+
+        ttk.Button(
+            frame,
             text="СОЗДАТЬ СРЕЗ ВОРОНКИ (24 сделки)",
             command=self.create_pipeline_snapshot,
         ).pack(anchor="w", pady=5)
@@ -1029,6 +1252,26 @@ class App:
             )
         except Exception as error:
             self.root.after(0, lambda: messagebox.showerror("Ошибка SLA", repr(error)))
+
+    def create_presentation_scenario(self):
+        threading.Thread(target=self._create_presentation_scenario_worker, daemon=True).start()
+
+    def _create_presentation_scenario_worker(self):
+        try:
+            self.ensure_ready()
+            created = create_presentation_scenario(
+                self.pipeline_id,
+                self.user_id,
+                self.stages,
+            )
+            self.root.after(
+                0,
+                lambda: self.status.set(
+                    f"Презентационный сценарий создан: {len(created)} сделок — входящие / SLA / квалификация / интервью / документы / заказчик / выход"
+                ),
+            )
+        except Exception as error:
+            self.root.after(0, lambda: messagebox.showerror("Ошибка презентации", repr(error)))
 
     def create_pipeline_snapshot(self):
         threading.Thread(target=self._create_pipeline_snapshot_worker, daemon=True).start()

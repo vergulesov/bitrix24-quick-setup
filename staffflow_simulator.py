@@ -1625,3 +1625,25 @@ class App:
         self.thread.start()
 
     def loop(self, interval):
+        while self.running and self.scenario_index < len(WORKDAY_SCENARIO):
+            self._create_next_worker()
+            if self.running and self.scenario_index < len(WORKDAY_SCENARIO):
+                time.sleep(interval)
+
+        self.running = False
+        self.root.after(
+            0,
+            lambda: self.status.set(
+                f"Сценарий завершён: {self.created} / {len(WORKDAY_SCENARIO)}"
+            ),
+        )
+
+    def pause(self):
+        self.running = False
+        self.status.set(f"Пауза: {self.created} / {len(WORKDAY_SCENARIO)}")
+
+    def reset_scenario(self):
+        self.pause()
+        self.scenario_index = 0
+        self.created = 0
+        self.status.set("Сценарий сброшен: 0 / 30")

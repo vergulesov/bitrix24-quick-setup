@@ -76,83 +76,55 @@ SLA_PRESENTATION_SCENARIO = [
 ]
 
 def create_sla_presentation(category_id, user_id, stages):
-    """SLA-презентация: те же четыре SLA-кандидата приходят реальным incoming."""
+    """Специальный SLA-стенд: четыре фиксированных контрольных состояния."""
     stage_id = stages.get("Новый кандидат")
     if not stage_id:
         raise RuntimeError("Не найдена стадия «Новый кандидат».")
 
+    now = datetime.now()
     created = []
 
-    for index, case in enumerate(SLA_PRESENTATION_SCENARIO):
-        # Важный момент: кандидат сначала реально приходит через Open Channel.
-        # Поэтому это тот же «Новый кандидат», который видит рекрутер во «Входящих».
-        before = count_pipeline_deals(category_id)
-        send_openline_message(
-            name=case["name"],
-            vacancy=case["vacancy"],
-            text=(
-                f"Здравствуйте! Интересует вакансия «{case['vacancy']}». "
-                "Готов пройти следующий этап."
-            ),
-            message_prefix=f"sla-presentation-{index + 1}",
-        )
-        recent = find_recent_deal(
-            category_id,
-            case["name"],
-            timeout=15,
-            before_count=before,
-        )
-        deal_id = int(recent["id"])
-
-        # Сохраняем ровно те же четыре SLA-контрольные точки из рабочего
-        # сценария 7c59e0f. Срочность соответствует результату SLA-сценария.
-        deadline = datetime.now() + timedelta(minutes=case["delta"])
+    for case in SLA_PRESENTATION_SCENARIO:
+        deadline = now + timedelta(minutes=case["delta"])
         inbound = deadline - timedelta(minutes=SLA_MINUTES)
-        urgency = (
-            "Просрочено" if case["delta"] < 0
-            else "Сейчас" if case["delta"] <= 30
-            else "Скоро" if case["delta"] <= 120
-            else "Не срочно"
-        )
 
-        call(
-            "crm.item.update",
+        # КРИТИЧНО: сделка сразу создаётся в «Новый кандидат»
+        # и сразу получает «Срок реакции». Это штатный запуск SLA-БП.
+        # «Срочность» здесь НЕ заполняем — её пишет сам БП.
+        fields = {
+            DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
+            DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
+            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+79000000{100 + len(created)}",
+            DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
+            DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow SLA Demo",
+            DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
+            DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
+            DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
+            DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
+        }
+
+        result = call(
+            "crm.item.add",
             {
                 "entityTypeId": 2,
-                "id": deal_id,
                 "useOriginalUfNames": "Y",
                 "fields": {
+                    "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
+                    "categoryId": category_id,
                     "stageId": stage_id,
+                    "assignedById": user_id,
                     "comments": DEMO_COMMENT,
-                    DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
-                    DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-                    DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
-                    DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
-                    DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
-                    DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
-                    DEAL_FIELD_CODES["URGENCY"]: urgency,
-                    DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
-                    DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
+                    **fields,
                 },
             },
         )
+        deal_id = int(result["item"]["id"])
 
-        for contact_id in recent.get("contactIds", []) or []:
-            try:
-                call(
-                    "crm.item.update",
-                    {
-                        "entityTypeId": 3,
-                        "id": int(contact_id),
-                        "useOriginalUfNames": "Y",
-                        "fields": {"comments": "[DEMO] SLA simulator contact"},
-                    },
-                )
-            except Exception:
-                pass
+        # Сделка сразу создаётся в «Новый кандидат» — это штатный триггер SLA БП.
+        created.append(deal_id)
 
         call(
             "crm.timeline.comment.add",
@@ -161,14 +133,13 @@ def create_sla_presentation(category_id, user_id, stages):
                     "ENTITY_ID": deal_id,
                     "ENTITY_TYPE": "deal",
                     "COMMENT": (
-                        f'[SLA DEMO] Реальный входящий + контрольная точка '
-                        f'{case["delta"]:+d} мин. Срочность: {urgency}.'
+                        f'[SLA DEMO] Контрольная точка: '
+                        f'{case["delta"]:+d} мин. '
+                        "Срочность рассчитывает SLA-БП."
                     ),
                 }
             },
         )
-
-        created.append(deal_id)
 
     return created
 

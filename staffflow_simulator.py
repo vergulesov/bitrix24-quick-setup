@@ -588,7 +588,7 @@ def create_presentation_incoming_fallback(category_id, user_id, stages, case, re
             "entityTypeId": 2,
             "useOriginalUfNames": "Y",
             "fields": {
-                "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
+                "title": f'{case["name"]} {case["surname"]}',
                 "categoryId": category_id,
                 "stageId": stages["Новый кандидат"],
                 "assignedById": user_id,
@@ -927,7 +927,7 @@ def create_presentation_scenario(category_id, user_id, stages):
             "entityTypeId": 2,
             "useOriginalUfNames": "Y",
             "fields": {
-                "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
+                "title": f'{case["name"]} {case["surname"]}',
                 "categoryId": category_id,
                 "stageId": stages[case["stage"]],
                 "assignedById": user_id,
@@ -935,7 +935,7 @@ def create_presentation_scenario(category_id, user_id, stages):
                 DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
                 DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
                 DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
-                DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+                DEAL_FIELD_CODES["VACANCY"]: "",
                 DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow Presentation",
                 DEAL_FIELD_CODES["LAST_INBOUND_AT"]: (deadline - timedelta(minutes=SLA_MINUTES)).isoformat(timespec="seconds"),
                 DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: now.isoformat(timespec="seconds"),

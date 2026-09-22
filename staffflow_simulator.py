@@ -78,9 +78,8 @@ SLA_PRESENTATION_SCENARIO = [
 def create_sla_presentation(category_id, user_id, stages):
     """Специальный SLA-стенд: четыре контрольные точки, рассчитанные штатным БП."""
     stage_id = stages.get("Новый кандидат")
-    safe_stage = stages.get("Квалификация")
-    if not stage_id or not safe_stage:
-        raise RuntimeError("Не найдены стадии «Новый кандидат» / «Квалификация».")
+    if not stage_id:
+        raise RuntimeError("Не найдена стадия «Новый кандидат».")
 
     now = datetime.now()
     created = []
@@ -108,7 +107,7 @@ def create_sla_presentation(category_id, user_id, stages):
             DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
         }
 
-        # Создаём вне «Новый кандидат», чтобы БП ещё не стартовал.
+        # Создаём сразу в «Новый кандидат», чтобы штатный БП стартовал на создании сделки.
         result = call(
             "crm.item.add",
             {
@@ -117,7 +116,7 @@ def create_sla_presentation(category_id, user_id, stages):
                 "fields": {
                     "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
                     "categoryId": category_id,
-                    "stageId": safe_stage,
+                    "stageId": stage_id,
                     "assignedById": user_id,
                     "comments": DEMO_COMMENT,
                     **fields,
@@ -126,20 +125,8 @@ def create_sla_presentation(category_id, user_id, stages):
         )
         deal_id = int(result["item"]["id"])
 
-        # Теперь переводим в «Новый кандидат».
-        # Здесь запускается штатный БП:
-        # если «Срок реакции» заполнен — он его не меняет,
-        # а дальше сам выставляет «Срочность» по этому сроку.
-        call(
-            "crm.item.update",
-            {
-                "entityTypeId": 2,
-                "id": deal_id,
-                "useOriginalUfNames": "Y",
-                "fields": {"stageId": stage_id},
-            },
-        )
-
+        # Сделка сразу создаётся в «Новый кандидат».
+        # При включённом штатном БП это сразу запускает контроль SLA.
         created.append(deal_id)
 
         call(

@@ -76,7 +76,7 @@ SLA_PRESENTATION_SCENARIO = [
 ]
 
 def create_sla_presentation(category_id, user_id, stages):
-    """SLA-стенд: те же четыре сделки получают реальный Open Channel incoming."""
+    """Специальный SLA-стенд: четыре фиксированных контрольных состояния."""
     stage_id = stages.get("Новый кандидат")
     if not stage_id:
         raise RuntimeError("Не найдена стадия «Новый кандидат».")
@@ -84,66 +84,26 @@ def create_sla_presentation(category_id, user_id, stages):
     now = datetime.now()
     created = []
 
-    for index, case in enumerate(SLA_PRESENTATION_SCENARIO):
+    for case in SLA_PRESENTATION_SCENARIO:
         deadline = now + timedelta(minutes=case["delta"])
         inbound = deadline - timedelta(minutes=SLA_MINUTES)
 
-        # Сначала создаём CRM-контакт с тем же IMOL-идентификатором,
-        # который потом придёт из Connector. Chat Tracker сможет узнать
-        # существующего клиента и не создавать второго кандидата.
-        stamp = int(time.time() * 1000)
-        external_user_id = f"sla-user-{stamp}-{index}"
-        external_chat_id = f"sla-chat-{stamp}-{index}"
-        messenger_value = (
-            f"imol|{CONNECTOR_ID}|{OPEN_LINE_ID}|"
-            f"{external_chat_id}|{external_user_id}"
-        )
-        phone = f"+79000000{100 + index}"
-
-        contact_result = call(
-            "crm.item.add",
-            {
-                "entityTypeId": 3,
-                "useOriginalUfNames": "Y",
-                "fields": {
-                    "name": case["name"],
-                    "lastName": case["surname"],
-                    "fm": [
-                        {
-                            "typeId": "PHONE",
-                            "valueType": "WORK",
-                            "value": phone,
-                        },
-                        {
-                            "typeId": "IM",
-                            "valueType": "IMOL",
-                            "value": messenger_value,
-                        },
-                    ],
-                    "comments": "[DEMO] SLA simulator contact",
-                },
-            },
-        )
-        contact_id = int(contact_result["item"]["id"])
-
         # КРИТИЧНО: сделка сразу создаётся в «Новый кандидат»
-        # и сразу получает «Срок реакции». Именно это даёт штатному SLA-БП
-        # правильную стадию и дедлайн на момент его запуска.
+        # и сразу получает «Срок реакции». Это штатный запуск SLA-БП.
         # «Срочность» здесь НЕ заполняем — её пишет сам БП.
         fields = {
             DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: phone,
+            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+79000000{100 + len(created)}",
             DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
             DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
-            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
+            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow SLA Demo",
             DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
             DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
             DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
             DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
-            "contactIds": [contact_id],
         }
 
         result = call(
@@ -162,22 +122,9 @@ def create_sla_presentation(category_id, user_id, stages):
             },
         )
         deal_id = int(result["item"]["id"])
-        created.append(deal_id)
 
-        # Теперь тот же внешний клиент реально пишет в Open Channel.
-        # Благодаря заранее созданному контакту CRM tracker должен связать
-        # входящий диалог с этим же CRM-клиентом, а не создать дубль.
-        send_openline_message(
-            name=f'{case["name"]} {case["surname"]}',
-            vacancy=case["vacancy"],
-            text=(
-                f"Здравствуйте! Откликаюсь на вакансию «{case['vacancy']}». "
-                "Готов обсудить условия."
-            ),
-            external_user_id=external_user_id,
-            external_chat_id=external_chat_id,
-            message_prefix=f"sla-incoming-{index}",
-        )
+        # Сделка сразу создаётся в «Новый кандидат» — это штатный триггер SLA БП.
+        created.append(deal_id)
 
         call(
             "crm.timeline.comment.add",
@@ -186,16 +133,17 @@ def create_sla_presentation(category_id, user_id, stages):
                     "ENTITY_ID": deal_id,
                     "ENTITY_TYPE": "deal",
                     "COMMENT": (
-                        f'[SLA DEMO] Контрольная точка: {case["delta"]:+d} мин. '
-                        "Сделка создана в «Новый кандидат», "
-                        "«Срочность» рассчитывает SLA-БП; "
-                        "входящее сообщение отправлено через Open Channel."
+                        f'[SLA DEMO] Контрольная точка: '
+                        f'{case["delta"]:+d} мин. '
+                        "Срочность рассчитывает SLA-БП."
                     ),
                 }
             },
         )
 
     return created
+
+
 
 
 PRESENTATION_SCENARIO = [
@@ -893,13 +841,6 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
     deal_id = int(recent["id"])
 
     deadline = datetime.now() + timedelta(minutes=case.get("delta", 60))
-    urgency = (
-        "Просрочено" if case.get("delta", 0) < 0
-        else "Сейчас" if case.get("delta", 0) <= 30
-        else "Скоро" if case.get("delta", 0) <= 120
-        else "Не срочно"
-    )
-
     call(
         "crm.item.update",
         {
@@ -917,7 +858,6 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
                 DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                 DEAL_FIELD_CODES["NEXT_ACTION_AT"]: datetime.now().isoformat(timespec="seconds"),
                 DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
-                DEAL_FIELD_CODES["URGENCY"]: urgency,
                 DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
                 DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
             },
@@ -943,181 +883,79 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
 
 def create_presentation_scenario(category_id, user_id, stages):
     """
-    Единый презентационный сценарий StaffFlow.
+    Презентационный стенд: отдельные, визуально понятные рабочие сцены.
 
-    Показывает три рабочих представления одной CRM:
-    1. SLA — четыре кандидата с разными контрольными точками.
-    2. Входящие — два новых кандидата реально приходят через Open Channel,
-       плюс повторные сообщения от существующих кандидатов.
-    3. Воронка — те же рабочие сущности распределены по стадиям для списка и канбана.
+    1. SLA — четыре реальные сделки в «Новый кандидат».
+       Срочность заполняет штатный SLA-БП.
+    2. Входящие — три отдельных реальных Open Channel обращения.
+    3. Воронка — четыре обработанных кандидата на разных стадиях.
+       Их повторное сообщение возвращает ОДНУ и ту же сделку во входящие.
+    4. Ещё две спокойные сделки для заполнения дальнейших стадий.
 
-    Итого после запуска: 12 кандидатов, из них 4 SLA + 2 новых входящих
-    + 4 повторных входящих + 2 кандидата на дальнейших стадиях.
+    Всего: 13 сделок.
     """
-    # Сначала создаём четыре SLA-контрольные точки.
-    # Эта функция использует тот же штатный БП, который мы уже проверили.
-    created = create_sla_presentation(category_id, user_id, stages)
+    created = []
+    created.extend(create_sla_presentation(category_id, user_id, stages))
 
-    new_cases = [
-        {
-            "name": "Сергей",
-            "surname": "Кузнецов",
-            "vacancy": "Водитель",
-            "message": "Здравствуйте! Интересует вакансия «Водитель». Готов выйти быстро.",
-            "priority": "Высокий",
-            "delta": 30,
-            "blocker": "Нужно ответить",
-            "next": "Ответить кандидату",
-        },
-        {
-            "name": "Ирина",
-            "surname": "Соколова",
-            "vacancy": "Кладовщик",
-            "message": "Добрый день! Подскажите, есть ли сейчас вакансия кладовщика?",
-            "priority": "Высокий",
-            "delta": 90,
-            "blocker": "Нужно ответить",
-            "next": "Ответить кандидату",
-        },
+    incoming_cases = [
+        {"name":"Алексей","surname":"Смирнов","vacancy":"Водитель","message":"Здравствуйте! Интересует вакансия «Водитель». Готов выйти быстро.","priority":"Высокий","delta":30,"blocker":"Нужно ответить","next":"Ответить кандидату"},
+        {"name":"Екатерина","surname":"Орлова","vacancy":"Кладовщик","message":"Добрый день! Подскажите, есть ли сейчас вакансия кладовщика?","priority":"Высокий","delta":60,"blocker":"Нужно ответить","next":"Ответить кандидату"},
+        {"name":"Роман","surname":"Кузнецов","vacancy":"Курьер","message":"Здравствуйте! Откликаюсь на вакансию курьера. Когда можно обсудить условия?","priority":"Средний","delta":90,"blocker":"Нужно ответить","next":"Ответить кандидату"},
     ]
-
-    for index, case in enumerate(new_cases):
-        created.append(
-            create_new_incoming_candidate(
-                category_id, user_id, stages, case, index
-            )
-        )
+    for index, case in enumerate(incoming_cases):
+        created.append(create_new_incoming_candidate(category_id, user_id, stages, case, index))
 
     existing_cases = [
-        {
-            "name": "Алексей",
-            "surname": "Смирнов",
-            "vacancy": "Водитель",
-            "stage": "Квалификация",
-            "priority": "Высокий",
-            "delta": 60,
-            "blocker": "Новое сообщение",
-            "next": "Ответить кандидату",
-            "message": "А график работы какой? Могу работать посменно.",
-            "make_call": False,
-        },
-        {
-            "name": "Юлия",
-            "surname": "Орлова",
-            "vacancy": "Администратор",
-            "stage": "Интервью",
-            "priority": "Высокий",
-            "delta": 30,
-            "blocker": "Новое сообщение",
-            "next": "Ответить кандидату",
-            "message": "Подтвердите, пожалуйста, интервью на сегодня.",
-            "make_call": True,
-        },
-        {
-            "name": "Наталья",
-            "surname": "Волкова",
-            "vacancy": "Кладовщик",
-            "stage": "Документы",
-            "priority": "Высокий",
-            "delta": 90,
-            "blocker": "Новое сообщение",
-            "next": "Проверить документы",
-            "message": "Документы отправила. Проверьте, пожалуйста, дошли ли они.",
-            "make_call": False,
-        },
-        {
-            "name": "Денис",
-            "surname": "Иванов",
-            "vacancy": "Водитель",
-            "stage": "Передан заказчику",
-            "priority": "Высокий",
-            "delta": 120,
-            "blocker": "Новое сообщение",
-            "next": "Ответить кандидату",
-            "message": "Есть новости по моей кандидатуре от заказчика?",
-            "make_call": False,
-        },
+        {"name":"Павел","surname":"Смирнов","vacancy":"Администратор","stage":"Квалификация","priority":"Высокий","delta":60,"blocker":"Новое сообщение","next":"Ответить кандидату","message":"А график работы какой? Могу работать посменно.","make_call":False},
+        {"name":"Юлия","surname":"Орлова","vacancy":"Администратор","stage":"Интервью","priority":"Высокий","delta":30,"blocker":"Новое сообщение","next":"Ответить кандидату","message":"Подтвердите, пожалуйста, интервью на сегодня.","make_call":True},
+        {"name":"Наталья","surname":"Волкова","vacancy":"Кладовщик","stage":"Документы","priority":"Высокий","delta":90,"blocker":"Новое сообщение","next":"Проверить документы","message":"Документы отправила. Проверьте, пожалуйста, дошли ли они.","make_call":False},
+        {"name":"Денис","surname":"Иванов","vacancy":"Водитель","stage":"Передан заказчику","priority":"Высокий","delta":120,"blocker":"Новое сообщение","next":"Ответить кандидату","message":"Есть новости по моей кандидатуре от заказчика?","make_call":False},
     ]
-
     for index, case in enumerate(existing_cases, start=10):
-        result = create_existing_candidate_with_incoming(
-            category_id,
-            user_id,
-            stages,
-            case,
-            index,
-            make_call=case["make_call"],
-        )
+        result = create_existing_candidate_with_incoming(category_id, user_id, stages, case, index, make_call=case["make_call"])
         created.append(result["deal_id"])
 
     quiet_cases = [
-        {
-            "name": "Глеб",
-            "surname": "Морозов",
-            "vacancy": "Менеджер",
-            "stage": "Ожидаем решение",
-            "priority": "Средний",
-            "delta": 45,
-            "next": "Запросить решение",
-            "blocker": "Нет решения",
-        },
-        {
-            "name": "Николай",
-            "surname": "Соколов",
-            "vacancy": "Комплектовщик",
-            "stage": "Выход на работу",
-            "priority": "Высокий",
-            "delta": 180,
-            "next": "Подтвердить выход",
-            "blocker": "Выход сегодня",
-        },
+        {"name":"Глеб","surname":"Морозов","vacancy":"Менеджер","stage":"Ожидаем решение","priority":"Средний","delta":45,"next":"Запросить решение","blocker":"Нет решения"},
+        {"name":"Николай","surname":"Соколов","vacancy":"Комплектовщик","stage":"Выход на работу","priority":"Высокий","delta":180,"next":"Подтвердить выход","blocker":"Выход сегодня"},
     ]
-
     now = datetime.now()
     for case in quiet_cases:
         deadline = now + timedelta(minutes=case["delta"])
-        deal = call(
-            "crm.item.add",
-            {
-                "entityTypeId": 2,
-                "useOriginalUfNames": "Y",
-                "fields": {
-                    "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
-                    "categoryId": category_id,
-                    "stageId": stages[case["stage"]],
-                    "assignedById": user_id,
-                    "comments": DEMO_COMMENT,
-                    DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
-                    DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-                    DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
-                    DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
-                    DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow Presentation",
-                    DEAL_FIELD_CODES["LAST_INBOUND_AT"]: (
-                        deadline - timedelta(minutes=SLA_MINUTES)
-                    ).isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: now.isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
-                    DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
-                    DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
-                    DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
-                },
+        deal = call("crm.item.add", {
+            "entityTypeId": 2,
+            "useOriginalUfNames": "Y",
+            "fields": {
+                "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
+                "categoryId": category_id,
+                "stageId": stages[case["stage"]],
+                "assignedById": user_id,
+                "comments": DEMO_COMMENT,
+                DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
+                DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
+                DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
+                DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+                DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow Presentation",
+                DEAL_FIELD_CODES["LAST_INBOUND_AT"]: (deadline - timedelta(minutes=SLA_MINUTES)).isoformat(timespec="seconds"),
+                DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: now.isoformat(timespec="seconds"),
+                DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+                DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
+                DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
+                DEAL_FIELD_CODES["BLOCKER"]: case["blocker"],
+                DEAL_FIELD_CODES["NEXT_STEP"]: case["next"],
             },
-        )
+        })
         deal_id = int(deal["item"]["id"])
         created.append(deal_id)
-        call(
-            "crm.timeline.comment.add",
-            {
-                "fields": {
-                    "ENTITY_ID": deal_id,
-                    "ENTITY_TYPE": "deal",
-                    "COMMENT": f"[PRESENTATION] Тихая стадия: {case['stage']}.",
-                }
-            },
-        )
-
+        call("crm.timeline.comment.add", {
+            "fields": {
+                "ENTITY_ID": deal_id,
+                "ENTITY_TYPE": "deal",
+                "COMMENT": f'[PRESENTATION] Спокойная стадия: {case["stage"]}.',
+            }
+        })
     return created
+
 
 def create_pipeline_snapshot(category_id, user_id, stages, count=24):
     """Создаёт плотный рабочий срез по стадиям без имитации входящих."""

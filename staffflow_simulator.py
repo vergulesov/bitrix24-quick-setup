@@ -76,10 +76,13 @@ SLA_PRESENTATION_SCENARIO = [
 ]
 
 def create_sla_presentation(category_id, user_id, stages):
-    """Создаёт четыре сделки на разных контрольных точках SLA."""
-    stage_id = stages.get("Новый кандидат")
-    if not stage_id:
+    """Создаёт четыре контрольные сделки и запускает на них штатный SLA-БП."""
+    new_stage = stages.get("Новый кандидат")
+    safe_stage = stages.get("Квалификация")
+    if not new_stage:
         raise RuntimeError("Не найдена стадия «Новый кандидат».")
+    if not safe_stage:
+        raise RuntimeError("Не найдена безопасная стадия «Квалификация».")
 
     now = datetime.now()
     created = []
@@ -88,19 +91,22 @@ def create_sla_presentation(category_id, user_id, stages):
         deadline = now + timedelta(minutes=case["delta"])
         inbound = deadline - timedelta(minutes=SLA_MINUTES)
 
+        # Критично: сначала создаём сделку вне «Новый кандидат»,
+        # записываем RESPONSE_DEADLINE, и только потом переводим в «Новый кандидат».
+        # Так штатный БП SLA стартует уже с готовым сроком реакции.
         fields = {
             DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: "+79000000000",
+            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+79000000{100 + len(created)}",
             DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
             DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
-            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Другое",
+            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow SLA Demo",
             DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
             DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
             DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
             DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
-            DEAL_FIELD_CODES["NEXT_ACTION_AT"]: now.isoformat(timespec="seconds"),
+            DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
         }
 
         result = call(
@@ -111,7 +117,7 @@ def create_sla_presentation(category_id, user_id, stages):
                 "fields": {
                     "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
                     "categoryId": category_id,
-                    "stageId": stage_id,
+                    "stageId": safe_stage,
                     "assignedById": user_id,
                     "comments": DEMO_COMMENT,
                     **fields,
@@ -119,6 +125,18 @@ def create_sla_presentation(category_id, user_id, stages):
             },
         )
         deal_id = int(result["item"]["id"])
+
+        # Запускаем именно штатный SLA-БП переходом в «Новый кандидат».
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": {"stageId": new_stage},
+            },
+        )
+
         created.append(deal_id)
 
         call(
@@ -129,7 +147,8 @@ def create_sla_presentation(category_id, user_id, stages):
                     "ENTITY_TYPE": "deal",
                     "COMMENT": (
                         f'[SLA DEMO] Контрольная точка: '
-                        f'{case["delta"]:+d} мин до/после SLA.'
+                        f'{case["delta"]:+d} мин до/после SLA. '
+                        f'Срок реакции задан до запуска SLA-БП.'
                     ),
                 }
             },

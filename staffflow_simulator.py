@@ -133,7 +133,6 @@ def create_sla_presentation(category_id, user_id, stages):
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
-                    DEAL_FIELD_CODES["URGENCY"]: urgency,
                     DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
                     DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
                 },
@@ -154,21 +153,28 @@ def create_sla_presentation(category_id, user_id, stages):
             except Exception:
                 pass
 
-        # Open Channel и SLA-БП могут отработать асинхронно после входящего.
-        # Поэтому сначала даём автоматике закончить расчёт, а контрольную
-        # «Срочность» записываем последней — иначе БП может затереть значение.
-        time.sleep(2)
-        call(
-            "crm.item.update",
-            {
-                "entityTypeId": 2,
-                "id": deal_id,
-                "useOriginalUfNames": "Y",
-                "fields": {
-                    DEAL_FIELD_CODES["URGENCY"]: urgency,
+        # Здесь намеренно НЕ записываем URGENCY.
+        # «Срочность» должна быть рассчитана штатным SLA-БП Bitrix24.
+        # Ждём его результат и падаем с понятной ошибкой, если автоматизация
+        # не отработала — так симулятор не маскирует проблему ручным значением.
+        sla_deadline = time.time() + 10
+        while time.time() < sla_deadline:
+            item = call(
+                "crm.item.get",
+                {
+                    "entityTypeId": 2,
+                    "id": deal_id,
+                    "useOriginalUfNames": "Y",
                 },
-            },
-        )
+            ).get("item", {})
+            if item.get(DEAL_FIELD_CODES["URGENCY"]):
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError(
+                f'SLA-БП не заполнил «Срочность» для сделки {deal_id}. '
+                "Ручное значение не подставляем."
+            )
 
         call(
             "crm.timeline.comment.add",

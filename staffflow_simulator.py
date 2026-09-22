@@ -1271,7 +1271,7 @@ def delete_demo(category_id):
             or str(item.get("title", "")).startswith("[DEMO]")
             or str(item.get("title", "")) in sla_presentation_titles
             or "StaffFlow Health Check" in str(item.get("title", ""))
-            or "Открытая линия" in str(item.get("title", ""))
+
         ]
 
         if not targets:
@@ -1691,13 +1691,25 @@ class App:
 
     def delete_demo(self):
         if not messagebox.askyesno(
-            "Удалить SLA-демо",
-            "Удалить сделки SLA DEMO из воронки «Подбор персонала»?",
+            "Удалить демо-день",
+            "Удалить все тестовые сделки StaffFlow из воронки «Подбор персонала»?",
         ):
             return
 
+        if getattr(self, "_delete_running", False):
+            return
+
+        self._delete_running = True
+        self.pause()
+        self.status.set("Удаление демо-данных…")
+
+        threading.Thread(
+            target=self._delete_demo_worker,
+            daemon=True,
+        ).start()
+
+    def _delete_demo_worker(self):
         try:
-            self.pause()
             self.ensure_ready()
             deleted = delete_demo(self.pipeline_id)
             deleted_contacts = delete_demo_contacts()
@@ -1711,16 +1723,26 @@ class App:
 
             self.scenario_index = 0
             self.created = 0
-            self.status.set(
-                f"Удалено: сделки {deleted}, контакты {deleted_contacts}, "
-                f"задачи «Ответить кандидату» {deleted_tasks}; "
-                f"{unread_status}. Готово к новому запуску."
+            self.root.after(
+                0,
+                lambda: self.status.set(
+                    f"Удалено: сделки {deleted}, контакты {deleted_contacts}, "
+                    f"задачи «Ответить кандидату» {deleted_tasks}; "
+                    f"{unread_status}. Готово к новому запуску."
+                ),
             )
         except Exception as error:
-            messagebox.showerror(
-                "Ошибка",
-                f"{type(error).__name__}: {error}\n\n{traceback.format_exc()}",
+            error_text = f"{type(error).__name__}: {error}\n\n{traceback.format_exc()}"
+            self.root.after(
+                0,
+                lambda msg=error_text: messagebox.showerror("Ошибка удаления", msg),
             )
+            self.root.after(
+                0,
+                lambda: self.status.set("Ошибка удаления демо-данных"),
+            )
+        finally:
+            self._delete_running = False
 
 
 if __name__ == "__main__":

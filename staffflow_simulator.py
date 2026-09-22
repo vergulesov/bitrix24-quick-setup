@@ -154,6 +154,22 @@ def create_sla_presentation(category_id, user_id, stages):
             except Exception:
                 pass
 
+        # Open Channel и SLA-БП могут отработать асинхронно после входящего.
+        # Поэтому сначала даём автоматике закончить расчёт, а контрольную
+        # «Срочность» записываем последней — иначе БП может затереть значение.
+        time.sleep(2)
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": {
+                    DEAL_FIELD_CODES["URGENCY"]: urgency,
+                },
+            },
+        )
+
         call(
             "crm.timeline.comment.add",
             {

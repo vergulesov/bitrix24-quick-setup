@@ -76,20 +76,19 @@ SLA_PRESENTATION_SCENARIO = [
 ]
 
 def create_sla_presentation(category_id, user_id, stages):
-    """Создаёт четыре новых непрочитанных входящих кандидата для SLA-презентации."""
-    stage_id = stages.get("Новый кандидат")
-    if not stage_id:
-        raise RuntimeError("Не найдена стадия «Новый кандидат».")
+    """Создаёт четыре новых непрочитанных входящих кандидата с рабочим SLA БП."""
+    new_stage = stages.get("Новый кандидат")
+    prep_stage = stages.get("Квалификация")
+    if not new_stage or not prep_stage:
+        raise RuntimeError("Не найдены стадии «Новый кандидат» / «Квалификация».")
 
     created = []
 
     for index, case in enumerate(SLA_PRESENTATION_SCENARIO):
-        # Новый кандидат всегда приходит через настоящий Open Channel.
-        # Поэтому сделка создаётся именно как непрочитанное входящее обращение:
-        # она остаётся во «Входящих», а штатный SLA-БП запускается на стадии
-        # «Новый кандидат».
+        # 1. Настоящий incoming: кандидат появляется во «Входящих» как
+        # непрочитанный новый кандидат.
         before = count_pipeline_deals(category_id)
-        sent = send_openline_message(
+        send_openline_message(
             name=case["name"],
             vacancy=case["vacancy"],
             text=(
@@ -107,19 +106,11 @@ def create_sla_presentation(category_id, user_id, stages):
         )
         deal_id = int(recent["id"])
 
+        # 2. Готовим именно исходные данные SLA. Срочность НЕ записываем:
+        # её должен выставить штатный БП.
         now = datetime.now()
         deadline = now + timedelta(minutes=case["delta"])
         inbound = deadline - timedelta(minutes=SLA_MINUTES)
-        urgency = (
-            "Просрочено" if case["delta"] < 0
-            else "Сейчас" if case["delta"] <= 30
-            else "Скоро" if case["delta"] <= 120
-            else "Не срочно"
-        )
-
-        # Дожидаемся запуска штатного БП, затем задаём четыре контрольные
-        # точки презентации. Сам факт incoming и непрочитанность не трогаем.
-        time.sleep(2)
 
         call(
             "crm.item.update",
@@ -139,14 +130,35 @@ def create_sla_presentation(category_id, user_id, stages):
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
-                    DEAL_FIELD_CODES["URGENCY"]: urgency,
                     DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
                     DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
                 },
             },
         )
 
-        # Помечаем контакт как демо-данные, но не читаем его диалог.
+        # 3. Повторно переводим в «Новый кандидат», чтобы штатный SLA БП
+        # отработал уже с подготовленным сроком реакции.
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": {"stageId": prep_stage},
+            },
+        )
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": {"stageId": new_stage},
+            },
+        )
+
+        time.sleep(2)
+
         for contact_id in recent.get("contactIds", []) or []:
             try:
                 call(
@@ -170,7 +182,7 @@ def create_sla_presentation(category_id, user_id, stages):
                     "COMMENT": (
                         f'[SLA DEMO] Новый непрочитанный входящий. '
                         f'Контрольная точка: {case["delta"]:+d} мин. '
-                        f'Срочность: {urgency}.'
+                        'Срочность выставляется штатным SLA БП.'
                     ),
                 }
             },

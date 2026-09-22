@@ -75,14 +75,21 @@ SLA_PRESENTATION_SCENARIO = [
     {"name": "Ольга", "surname": "Морозова", "vacancy": "Оператор", "priority": "Высокий", "delta": -10},
 ]
 
+def _get_urgency_option_id(value):
+    data = call("crm.deal.fields", {})
+    field = (data or {}).get("result", {}).get(DEAL_FIELD_CODES["URGENCY"], {})
+    for item in field.get("items", []) or []:
+        if str(item.get("VALUE")) == str(value):
+            return int(item["ID"])
+    raise RuntimeError(f"Не найден вариант «Срочность» = {value!r}")
+
+
 def create_sla_presentation(category_id, user_id, stages):
-    """Создаёт четыре контрольные сделки и запускает на них штатный SLA-БП."""
-    new_stage = stages.get("Новый кандидат")
+    """Специальный SLA-стенд: четыре фиксированных контрольных состояния."""
+    stage_id = stages.get("Новый кандидат")
     safe_stage = stages.get("Квалификация")
-    if not new_stage:
-        raise RuntimeError("Не найдена стадия «Новый кандидат».")
-    if not safe_stage:
-        raise RuntimeError("Не найдена безопасная стадия «Квалификация».")
+    if not stage_id or not safe_stage:
+        raise RuntimeError("Не найдены стадии «Новый кандидат» / «Квалификация».")
 
     now = datetime.now()
     created = []
@@ -90,10 +97,15 @@ def create_sla_presentation(category_id, user_id, stages):
     for case in SLA_PRESENTATION_SCENARIO:
         deadline = now + timedelta(minutes=case["delta"])
         inbound = deadline - timedelta(minutes=SLA_MINUTES)
+        urgency = (
+            "Просрочено" if case["delta"] < 0
+            else "Сейчас" if case["delta"] <= 30
+            else "Скоро" if case["delta"] <= 120
+            else "Не срочно"
+        )
 
-        # Критично: сначала создаём сделку вне «Новый кандидат»,
-        # записываем RESPONSE_DEADLINE, и только потом переводим в «Новый кандидат».
-        # Так штатный БП SLA стартует уже с готовым сроком реакции.
+        # Это ИМЕННО специальный SLA-тест. Здесь дедлайн задаём заранее,
+        # чтобы четыре сделки одновременно показывали четыре контрольные точки.
         fields = {
             DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
@@ -126,14 +138,28 @@ def create_sla_presentation(category_id, user_id, stages):
         )
         deal_id = int(result["item"]["id"])
 
-        # Запускаем именно штатный SLA-БП переходом в «Новый кандидат».
+        # Сначала подготовили SLA, затем переводим в «Новый кандидат».
         call(
             "crm.item.update",
             {
                 "entityTypeId": 2,
                 "id": deal_id,
                 "useOriginalUfNames": "Y",
-                "fields": {"stageId": new_stage},
+                "fields": {"stageId": stage_id},
+            },
+        )
+
+        # Для специального четырёхсостоянийного стенда фиксируем отображаемое
+        # состояние тем же значением, которое использовалось в старом рабочем
+        # SLA-сценарии. Это НЕ относится к обычным входящим кандидатам.
+        urgency_id = _get_urgency_option_id(urgency)
+        call(
+            "crm.item.update",
+            {
+                "entityTypeId": 2,
+                "id": deal_id,
+                "useOriginalUfNames": "Y",
+                "fields": {DEAL_FIELD_CODES["URGENCY"]: urgency_id},
             },
         )
 
@@ -147,8 +173,8 @@ def create_sla_presentation(category_id, user_id, stages):
                     "ENTITY_TYPE": "deal",
                     "COMMENT": (
                         f'[SLA DEMO] Контрольная точка: '
-                        f'{case["delta"]:+d} мин до/после SLA. '
-                        f'Срок реакции задан до запуска SLA-БП.'
+                        f'{case["delta"]:+d} мин. '
+                        f'Срочность: {urgency}.'
                     ),
                 }
             },

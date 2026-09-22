@@ -76,32 +76,31 @@ SLA_PRESENTATION_SCENARIO = [
 ]
 
 def _get_urgency_option_id(value):
-    """Получает ID значения списка «Срочность» из полей смарт-сделки."""
+    """Получает ID значения поля-списка «Срочность» через описание пользовательского поля."""
     data = call(
-        "crm.item.fields",
+        "crm.deal.userfield.list",
         {
-            "entityTypeId": 2,
-            "useOriginalUfNames": "Y",
+            "filter": {
+                "FIELD_NAME": DEAL_FIELD_CODES["URGENCY"],
+            },
         },
     )
-    fields = (data or {}).get("result", {}).get("fields", {})
-    field = fields.get(DEAL_FIELD_CODES["URGENCY"], {})
-    items = field.get("items", []) or []
+    fields = (data or {}).get("result", []) or []
+    if not fields:
+        raise RuntimeError(
+            f"Bitrix не вернул пользовательское поле {DEAL_FIELD_CODES['URGENCY']!r}."
+        )
 
-    # На разных версиях REST название списка может быть VALUE или NAME.
+    field = fields[0]
+    items = field.get("LIST", []) or []
     for item in items:
-        item_value = item.get("VALUE")
-        item_name = item.get("NAME")
-        if str(item_value) == str(value) or str(item_name) == str(value):
+        if str(item.get("VALUE")) == str(value):
             return int(item["ID"])
 
-    available = [
-        str(item.get("VALUE") or item.get("NAME") or item.get("ID"))
-        for item in items
-    ]
+    available = [str(item.get("VALUE") or item.get("ID")) for item in items]
     raise RuntimeError(
         f"Не найден вариант «Срочность» = {value!r}. "
-        f"Доступные значения: {', '.join(available) or 'список не вернулся'}"
+        f"Доступные значения: {', '.join(available) or 'список пуст'}"
     )
 
 

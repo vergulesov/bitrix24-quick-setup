@@ -76,60 +76,90 @@ SLA_PRESENTATION_SCENARIO = [
 ]
 
 def create_sla_presentation(category_id, user_id, stages):
-    """Специальный SLA-стенд: четыре фиксированных контрольных состояния."""
+    """Создаёт четыре новых непрочитанных входящих кандидата для SLA-презентации."""
     stage_id = stages.get("Новый кандидат")
     if not stage_id:
         raise RuntimeError("Не найдена стадия «Новый кандидат».")
 
-    now = datetime.now()
     created = []
 
-    for case in SLA_PRESENTATION_SCENARIO:
+    for index, case in enumerate(SLA_PRESENTATION_SCENARIO):
+        # Новый кандидат всегда приходит через настоящий Open Channel.
+        # Поэтому сделка создаётся именно как непрочитанное входящее обращение:
+        # она остаётся во «Входящих», а штатный SLA-БП запускается на стадии
+        # «Новый кандидат».
+        before = count_pipeline_deals(category_id)
+        sent = send_openline_message(
+            name=case["name"],
+            vacancy=case["vacancy"],
+            text=(
+                f"Здравствуйте! Интересует вакансия «{case['vacancy']}». "
+                "Готов пройти следующий этап."
+            ),
+            message_prefix=f"sla-presentation-{index + 1}",
+        )
+
+        recent = find_recent_deal(
+            category_id,
+            case["name"],
+            timeout=15,
+            before_count=before,
+        )
+        deal_id = int(recent["id"])
+
+        now = datetime.now()
         deadline = now + timedelta(minutes=case["delta"])
         inbound = deadline - timedelta(minutes=SLA_MINUTES)
-
-        # Это ИМЕННО специальный SLA-тест. Здесь дедлайн задаём заранее,
-        # чтобы четыре сделки одновременно показывали четыре контрольные точки.
         urgency = (
             "Просрочено" if case["delta"] < 0
             else "Сейчас" if case["delta"] <= 30
             else "Скоро" if case["delta"] <= 120
             else "Не срочно"
         )
-        fields = {
-            DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
-            DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-            DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+79000000{100 + len(created)}",
-            DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
-            DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
-            DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "StaffFlow SLA Demo",
-            DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
-            DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
-            DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
-            DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
-            DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
-            DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
-        }
 
-        result = call(
-            "crm.item.add",
+        # Дожидаемся запуска штатного БП, затем задаём четыре контрольные
+        # точки презентации. Сам факт incoming и непрочитанность не трогаем.
+        time.sleep(2)
+
+        call(
+            "crm.item.update",
             {
                 "entityTypeId": 2,
+                "id": deal_id,
                 "useOriginalUfNames": "Y",
                 "fields": {
                     "title": f'{case["name"]} {case["surname"]} · {case["vacancy"]}',
-                    "categoryId": category_id,
-                    "stageId": stage_id,
-                    "assignedById": user_id,
                     "comments": DEMO_COMMENT,
-                    **fields,
+                    DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
+                    DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
+                    DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
+                    DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+                    DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
+                    DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
+                    DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
+                    DEAL_FIELD_CODES["URGENCY"]: urgency,
+                    DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
+                    DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
                 },
             },
         )
-        deal_id = int(result["item"]["id"])
 
-        # Сделка сразу создаётся в «Новый кандидат» — это штатный триггер SLA БП.
-        created.append(deal_id)
+        # Помечаем контакт как демо-данные, но не читаем его диалог.
+        for contact_id in recent.get("contactIds", []) or []:
+            try:
+                call(
+                    "crm.item.update",
+                    {
+                        "entityTypeId": 3,
+                        "id": int(contact_id),
+                        "useOriginalUfNames": "Y",
+                        "fields": {"comments": "[DEMO] SLA simulator contact"},
+                    },
+                )
+            except Exception:
+                pass
 
         call(
             "crm.timeline.comment.add",
@@ -138,13 +168,15 @@ def create_sla_presentation(category_id, user_id, stages):
                     "ENTITY_ID": deal_id,
                     "ENTITY_TYPE": "deal",
                     "COMMENT": (
-                        f'[SLA DEMO] Контрольная точка: '
-                        f'{case["delta"]:+d} мин. '
+                        f'[SLA DEMO] Новый непрочитанный входящий. '
+                        f'Контрольная точка: {case["delta"]:+d} мин. '
                         f'Срочность: {urgency}.'
                     ),
                 }
             },
         )
+
+        created.append(deal_id)
 
     return created
 

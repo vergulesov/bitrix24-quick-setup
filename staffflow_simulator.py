@@ -398,11 +398,13 @@ def urgency_level(deadline: datetime, now: datetime | None = None) -> str:
     """Три уровня срочности: сейчас, скоро, не сейчас."""
     now = now or datetime.now()
     minutes = (deadline - now).total_seconds() / 60
+    if minutes < 0:
+        return "Просрочено"
     if minutes <= 30:
-        return "🔴 Сейчас"
+        return "Сейчас"
     if minutes <= 120:
         return "Скоро"
-    return "🟢 Не сейчас"
+    return "Не срочно"
 
 
 def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:

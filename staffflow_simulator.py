@@ -826,9 +826,11 @@ def create_existing_candidate_with_incoming(
 def create_new_incoming_candidate(category_id, user_id, stages, case, index):
     """Создаёт нового кандидата реальным входящим сообщением."""
     before = count_pipeline_deals(category_id)
+    # ВАЖНО: должность НЕ передаём в коннектор отдельным полем.
+    # AI должен определить её только из текста сообщения.
     sent = send_openline_message(
         name=case["name"],
-        vacancy=case["vacancy"],
+        vacancy="",
         text=case["message"],
         message_prefix=f"presentation-new-{index}",
     )
@@ -898,10 +900,42 @@ def create_presentation_scenario(category_id, user_id, stages):
     created = []
     created.extend(create_sla_presentation(category_id, user_id, stages))
 
+    # AI-СЦЕНАРИЙ:
+    # должность есть только внутри текста входящего сообщения.
+    # Поле vacancy здесь не используется для создания CRM-сделки.
+    # expected_position — только контрольное значение для сценария,
+    # чтобы мы сами понимали, какой ответ ожидаем от AI.
     incoming_cases = [
-        {"name":"Алексей","surname":"Смирнов","vacancy":"Водитель","message":"Здравствуйте! Интересует вакансия «Водитель». Готов выйти быстро.","priority":"Высокий","delta":30,"blocker":"Нужно ответить","next":"Ответить кандидату"},
-        {"name":"Екатерина","surname":"Орлова","vacancy":"Кладовщик","message":"Добрый день! Подскажите, есть ли сейчас вакансия кладовщика?","priority":"Высокий","delta":60,"blocker":"Нужно ответить","next":"Ответить кандидату"},
-        {"name":"Роман","surname":"Кузнецов","vacancy":"Курьер","message":"Здравствуйте! Откликаюсь на вакансию курьера. Когда можно обсудить условия?","priority":"Средний","delta":90,"blocker":"Нужно ответить","next":"Ответить кандидату"},
+        {
+            "name": "Алексей",
+            "surname": "Смирнов",
+            "expected_position": "Водитель категории C",
+            "message": "Здравствуйте! Ищу работу водителем категории C. Стаж 5 лет, готов выйти со следующей недели.",
+            "priority": "Высокий",
+            "delta": 30,
+            "blocker": "Нужно ответить",
+            "next": "Ответить кандидату",
+        },
+        {
+            "name": "Екатерина",
+            "surname": "Орлова",
+            "expected_position": "Кладовщик",
+            "message": "Добрый день! Ищу работу кладовщиком. Есть опыт на складе, могу работать посменно.",
+            "priority": "Высокий",
+            "delta": 60,
+            "blocker": "Нужно ответить",
+            "next": "Ответить кандидату",
+        },
+        {
+            "name": "Роман",
+            "surname": "Кузнецов",
+            "expected_position": "Курьер",
+            "message": "Здравствуйте! Хочу устроиться курьером. Есть опыт доставки, могу начать в ближайшее время.",
+            "priority": "Средний",
+            "delta": 90,
+            "blocker": "Нужно ответить",
+            "next": "Ответить кандидату",
+        },
     ]
     for index, case in enumerate(incoming_cases):
         created.append(create_new_incoming_candidate(category_id, user_id, stages, case, index))

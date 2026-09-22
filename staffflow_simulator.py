@@ -173,12 +173,6 @@ def create_sla_presentation(category_id, user_id, stages):
     for case in SLA_PRESENTATION_SCENARIO:
         deadline = now + timedelta(minutes=case["delta"])
         inbound = deadline - timedelta(minutes=SLA_MINUTES)
-        urgency = (
-            "Просрочено" if case["delta"] < 0
-            else "Сейчас" if case["delta"] <= 30
-            else "Скоро" if case["delta"] <= 120
-            else "Не срочно"
-        )
 
         # Это ИМЕННО специальный SLA-тест. Здесь дедлайн задаём заранее,
         # чтобы четыре сделки одновременно показывали четыре контрольные точки.
@@ -222,20 +216,6 @@ def create_sla_presentation(category_id, user_id, stages):
                 "id": deal_id,
                 "useOriginalUfNames": "Y",
                 "fields": {"stageId": stage_id},
-            },
-        )
-
-        # Для специального четырёхсостоянийного стенда фиксируем отображаемое
-        # состояние тем же значением, которое использовалось в старом рабочем
-        # SLA-сценарии. Это НЕ относится к обычным входящим кандидатам.
-        urgency_id = _get_urgency_option_id(urgency)
-        call(
-            "crm.item.update",
-            {
-                "entityTypeId": 2,
-                "id": deal_id,
-                "useOriginalUfNames": "Y",
-                "fields": {DEAL_FIELD_CODES["URGENCY"]: urgency_id},
             },
         )
 

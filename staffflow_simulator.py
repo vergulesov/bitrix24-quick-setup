@@ -327,7 +327,9 @@ def send_openline_message(name, vacancy, text, external_user_id=None, external_c
         "user_name": name,
         "message_id": message_id,
         "chat_id": chat_id,
-        "chat_name": f"{name} — {vacancy}",
+        # Не передаём должность в имя чата: Bitrix может использовать chat_name
+        # при автоматическом названии CRM-сделки. Должность должен определить AI.
+        "chat_name": name,
         "text": text,
     }
     response = requests.post(
@@ -850,8 +852,8 @@ def create_new_incoming_candidate(category_id, user_id, stages, case, index):
                 "comments": DEMO_COMMENT,
                 DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
                 DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-                DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
-                DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+                # DESIRED_POSITION заполняется коннектором через AI.
+                # VACANCY в AI-сценарии намеренно не заполняем.
                 DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
                 DEAL_FIELD_CODES["LAST_INBOUND_AT"]: datetime.now().isoformat(timespec="seconds"),
                 DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),

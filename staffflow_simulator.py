@@ -1594,7 +1594,8 @@ class App:
                 ),
             )
         except Exception as error:
-            self.root.after(0, lambda: messagebox.showerror("Ошибка SLA", repr(error)))
+            error_text = repr(error)
+            self.root.after(0, lambda msg=error_text: messagebox.showerror("Ошибка SLA", msg))
 
     def create_presentation_scenario(self):
         threading.Thread(target=self._create_presentation_scenario_worker, daemon=True).start()
@@ -1614,7 +1615,8 @@ class App:
                 ),
             )
         except Exception as error:
-            self.root.after(0, lambda: messagebox.showerror("Ошибка презентации", repr(error)))
+            error_text = repr(error)
+            self.root.after(0, lambda msg=error_text: messagebox.showerror("Ошибка презентации", msg))
 
     def create_pipeline_snapshot(self):
         threading.Thread(target=self._create_pipeline_snapshot_worker, daemon=True).start()
@@ -1635,7 +1637,8 @@ class App:
                 ),
             )
         except Exception as error:
-            self.root.after(0, lambda: messagebox.showerror("Ошибка", repr(error)))
+            error_text = repr(error)
+            self.root.after(0, lambda msg=error_text: messagebox.showerror("Ошибка", msg))
 
     def start_scenario(self):
         if self.running:

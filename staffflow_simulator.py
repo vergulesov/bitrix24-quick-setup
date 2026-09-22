@@ -494,8 +494,8 @@ def create_sla_candidate(category_id, user_id, stages, index):
                 "fields": {
                     "comments": DEMO_COMMENT,
                     DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: name,
-                    DEAL_FIELD_CODES["DESIRED_POSITION"]: vacancy,
-                    DEAL_FIELD_CODES["VACANCY"]: vacancy,
+                    # Должность определяет AI из входящего сообщения.
+                    # Поле «Вакансия» в этом сценарии намеренно не заполняем.
                     DEAL_FIELD_CODES["LAST_INBOUND_AT"]: inbound.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
@@ -593,8 +593,7 @@ def create_presentation_incoming_fallback(category_id, user_id, stages, case, re
                 "comments": DEMO_COMMENT,
                 DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
                 DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
-                DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
-                DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+                # Должность приходит из AI. «Вакансия» остаётся пустой.
                 DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
                 DEAL_FIELD_CODES["LAST_INBOUND_AT"]: (
                     deadline - timedelta(minutes=SLA_MINUTES)
@@ -750,8 +749,8 @@ def create_existing_candidate_with_incoming(
         DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
         DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],
         DEAL_FIELD_CODES["CANDIDATE_PHONE"]: f"+7900000{500 + index}",
-        DEAL_FIELD_CODES["DESIRED_POSITION"]: case["vacancy"],
-        DEAL_FIELD_CODES["VACANCY"]: case["vacancy"],
+        # DESIRED_POSITION определяет AI из нового сообщения.
+        # VACANCY намеренно не заполняем.
         DEAL_FIELD_CODES["CANDIDATE_SOURCE"]: "Открытая линия",
         DEAL_FIELD_CODES["LAST_INBOUND_AT"]: now.isoformat(timespec="seconds"),
         DEAL_FIELD_CODES["LAST_RESPONSE_AT"]: (now - timedelta(minutes=20)).isoformat(timespec="seconds"),

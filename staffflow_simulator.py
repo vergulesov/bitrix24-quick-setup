@@ -176,6 +176,12 @@ def create_sla_presentation(category_id, user_id, stages):
 
         # Это ИМЕННО специальный SLA-тест. Здесь дедлайн задаём заранее,
         # чтобы четыре сделки одновременно показывали четыре контрольные точки.
+        urgency = (
+            "Просрочено" if case["delta"] < 0
+            else "Сейчас" if case["delta"] <= 30
+            else "Скоро" if case["delta"] <= 120
+            else "Не срочно"
+        )
         fields = {
             DEAL_FIELD_CODES["CANDIDATE_FIRST_NAME"]: case["name"],
             DEAL_FIELD_CODES["CANDIDATE_LAST_NAME"]: case["surname"],

@@ -367,7 +367,7 @@ def urgency_level(deadline: datetime, now: datetime | None = None) -> str:
     if minutes <= 30:
         return "🔴 Сейчас"
     if minutes <= 120:
-        return "🟠 Скоро"
+        return "Скоро"
     return "🟢 Не сейчас"
 
 

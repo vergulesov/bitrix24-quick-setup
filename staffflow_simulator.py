@@ -133,6 +133,7 @@ def create_sla_presentation(category_id, user_id, stages):
                     DEAL_FIELD_CODES["RESPONSE_DEADLINE"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["NEXT_ACTION_AT"]: deadline.isoformat(timespec="seconds"),
                     DEAL_FIELD_CODES["PRIORITY"]: case["priority"],
+                    DEAL_FIELD_CODES["URGENCY"]: urgency,
                     DEAL_FIELD_CODES["BLOCKER"]: "Нужно ответить",
                     DEAL_FIELD_CODES["NEXT_STEP"]: "Ответить кандидату",
                 },
@@ -152,30 +153,6 @@ def create_sla_presentation(category_id, user_id, stages):
                 )
             except Exception:
                 pass
-
-        # URGENCY здесь не заполняем вообще.
-        # После реального incoming запускаем ИМЕННО SLA-БП Bitrix24.
-        start_sla_workflow(deal_id)
-
-        # Ждём результат самого БП, а не подставляем его результат кодом.
-        sla_deadline = time.time() + 15
-        while time.time() < sla_deadline:
-            item = call(
-                "crm.item.get",
-                {
-                    "entityTypeId": 2,
-                    "id": deal_id,
-                    "useOriginalUfNames": "Y",
-                },
-            ).get("item", {})
-            if item.get(DEAL_FIELD_CODES["URGENCY"]):
-                break
-            time.sleep(1)
-        else:
-            raise RuntimeError(
-                f'SLA-БП не заполнил «Срочность» для сделки {deal_id}. '
-                "Ручное значение не подставляем."
-            )
 
         call(
             "crm.timeline.comment.add",
@@ -329,59 +306,6 @@ def send_openline_test():
     if isinstance(data, dict) and data.get("ok") is False:
         raise RuntimeError(f"Connector /send вернул ошибку: {data!r}")
     return data or {"ok": True, "status_code": response.status_code}
-
-
-def find_sla_workflow_template():
-    """Находит именно шаблон SLA-БП для сделок, не подставляя значение URGENCY вручную."""
-    data = call(
-        "bizproc.workflow.template.list",
-        {
-            "select": ["ID", "NAME", "ENTITY", "DOCUMENT_TYPE", "TEMPLATE", "AUTO_EXECUTE"],
-            "filter": {
-                "MODULE_ID": "crm",
-                "ENTITY": "CCrmDocumentDeal",
-                "DOCUMENT_TYPE": "DEAL",
-            },
-            "order": {"ID": "DESC"},
-        },
-    ) or []
-
-    candidates = []
-    for template in data:
-        template_text = str(template.get("TEMPLATE", ""))
-        name = str(template.get("NAME", ""))
-        haystack = f"{name} {template_text}".lower()
-        if (
-            "urgency" in haystack
-            or "срочност" in haystack
-            or "uf_crm_urgency" in haystack
-        ) and (
-            "response_deadline" in haystack
-            or "срок реакции" in haystack
-            or "uf_crm_response_deadline" in haystack
-        ):
-            candidates.append(template)
-
-    if not candidates:
-        raise RuntimeError(
-            "Не найден SLA-БП для сделок: шаблон должен читать «Срок реакции» "
-            "и записывать «Срочность»."
-        )
-
-    return candidates[0]
-
-
-def start_sla_workflow(deal_id):
-    """Запускает тот же SLA-БП Bitrix24 на конкретной сделке."""
-    template = find_sla_workflow_template()
-    result = call(
-        "bizproc.workflow.start",
-        {
-            "TEMPLATE_ID": int(template["ID"]),
-            "DOCUMENT_ID": ["crm", "CCrmDocumentDeal", f"DEAL_{deal_id}"],
-        },
-    )
-    return result
 
 
 def count_pipeline_deals(category_id):

@@ -413,6 +413,19 @@ def sla_status_text(deadline: datetime, now: datetime | None = None) -> str:
     return f"🟢 ОСТАЛОСЬ · {delta_minutes} мин"
 
 
+def urgency_level(deadline: datetime, now: datetime | None = None) -> str:
+    """Возвращает демонстрационную срочность по времени до SLA."""
+    now = now or datetime.now()
+    delta_minutes = round((deadline - now).total_seconds() / 60)
+    if delta_minutes < 0:
+        return "Просрочено"
+    if delta_minutes <= 30:
+        return "Сейчас"
+    if delta_minutes <= 120:
+        return "Скоро"
+    return "Не срочно"
+
+
 _SLA_FIELD_CODE = None
 
 def create_sla_candidate(category_id, user_id, stages, index):
